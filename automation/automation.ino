@@ -3,29 +3,61 @@
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
-const char* ssid = "Free Public Wi-Fi";
-const char* password = "2A0R0M4AAN";
-// Add after existing WiFi credentials
-WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP, "pool.ntp.org");
-unsigned long lastTimeUpdate = 0;
-const long timeUpdateInterval = 1000; // Update time every second
-
-// Web server
-ESP8266WebServer server(80);
-
-// Relay pins (GPIO numbers)
-const int relay1 = 5; // D1
-const int relay2 = 4; // D2
-const int relay3 = 0; // D3
-const int relay4 = 2; // D4
+const int relay1 = 5;  // D1
+const int relay2 = 4;  // D2
+const int relay3 = 14; // D5
+const int relay4 = 12; // D6
 
 bool relay1State = false;
 bool relay2State = false;
 bool relay3State = false;
 bool relay4State = false;
 
-// Modify the HTML string to add time display
+const char* ssid = "Free Public Wi-Fi";
+const char* password = "2A0R0M4AAN";
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
+unsigned long lastTimeUpdate = 0;
+const long timeUpdateInterval = 1000;
+ESP8266WebServer server(80);
+
+void IRAM_ATTR setup() {
+  pinMode(relay1, OUTPUT);
+  pinMode(relay2, OUTPUT);
+  pinMode(relay3, OUTPUT);
+  pinMode(relay4, OUTPUT);
+  
+  digitalWrite(relay1, HIGH);
+  digitalWrite(relay2, HIGH);
+  digitalWrite(relay3, HIGH);
+  digitalWrite(relay4, HIGH);
+  
+  delay(50);
+  
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  Serial.println("\nConnected to WiFi");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  timeClient.begin();
+  timeClient.setTimeOffset(19800);
+
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/relay/1", HTTP_GET, handleRelay1);
+  server.on("/relay/2", HTTP_GET, handleRelay2);
+  server.on("/relay/3", HTTP_GET, handleRelay3);
+  server.on("/relay/4", HTTP_GET, handleRelay4);
+  server.on("/time", HTTP_GET, handleTime);
+  
+  server.begin();
+}
+
 const char* html = R"html(
 <!DOCTYPE html>
 <html>
@@ -79,52 +111,13 @@ const char* html = R"html(
 </html>
 )html";
 
-void setup() {
-  Serial.begin(115200);
-
-  // Set relay pins as outputs
-  pinMode(relay1, OUTPUT);
-  pinMode(relay2, OUTPUT);
-  pinMode(relay3, OUTPUT);
-  pinMode(relay4, OUTPUT);
-
-  // Initialize relays to off (assuming active-low relays)
-  digitalWrite(relay1, HIGH);
-  digitalWrite(relay2, HIGH);
-  digitalWrite(relay3, HIGH);
-  digitalWrite(relay4, HIGH);
-
-  // Connect to WiFi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nConnected to WiFi");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-
-  timeClient.begin();
-  timeClient.setTimeOffset(19800);
-
-  // Setup web server routes
-  server.on("/", HTTP_GET, handleRoot);
-  server.on("/relay/1", HTTP_GET, handleRelay1);
-  server.on("/relay/2", HTTP_GET, handleRelay2);
-  server.on("/relay/3", HTTP_GET, handleRelay3);
-  server.on("/relay/4", HTTP_GET, handleRelay4);
-  server.on("/time", HTTP_GET, handleTime);
-  
-  server.begin();
-}
-
 void loop() {
   server.handleClient();
   unsigned long currentMillis = millis();
-    if (currentMillis - lastTimeUpdate >= timeUpdateInterval) {
-        timeClient.update();
-        lastTimeUpdate = currentMillis;
-    }
+  if (currentMillis - lastTimeUpdate >= timeUpdateInterval) {
+    timeClient.update();
+    lastTimeUpdate = currentMillis;
+  }
 }
 
 void handleRoot() {
@@ -133,7 +126,7 @@ void handleRoot() {
 
 void toggleRelay(int relayPin, bool &relayState) {
   relayState = !relayState;
-  digitalWrite(relayPin, relayState ? LOW : HIGH); // Assuming active-low relays
+  digitalWrite(relayPin, relayState ? LOW : HIGH);
 }
 
 void handleRelay1() {
@@ -157,6 +150,6 @@ void handleRelay4() {
 }
 
 void handleTime() {
-    String formattedTime = timeClient.getFormattedTime();
-    server.send(200, "text/plain", formattedTime);
+  String formattedTime = timeClient.getFormattedTime();
+  server.send(200, "text/plain", formattedTime);
 }
