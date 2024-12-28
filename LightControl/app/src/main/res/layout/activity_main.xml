@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ESP8266 Control"
+        android:textAlignment="center"
+        android:textSize="20sp"
+        android:layout_marginBottom="20dp"/>
+
+    <Button
+        android:id="@+id/relay1Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Relay 1"
+        android:layout_marginBottom="10dp"/>
+
+    <Button
+        android:id="@+id/relay2Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Relay 2"
+        android:layout_marginBottom="10dp"/>
+
+    <Button
+        android:id="@+id/relay3Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Relay 3"
+        android:layout_marginBottom="10dp"/>
+
+    <Button
+        android:id="@+id/relay4Button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Relay 4"/>
+
+</LinearLayout>
