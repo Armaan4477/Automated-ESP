@@ -1,9 +1,15 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 
-// WiFi credentials
 const char* ssid = "Free Public Wi-Fi";
 const char* password = "2A0R0M4AAN";
+// Add after existing WiFi credentials
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org");
+unsigned long lastTimeUpdate = 0;
+const long timeUpdateInterval = 1000; // Update time every second
 
 // Web server
 ESP8266WebServer server(80);
@@ -19,7 +25,7 @@ bool relay2State = false;
 bool relay3State = false;
 bool relay4State = false;
 
-// HTML page with buttons
+// Modify the HTML string to add time display
 const char* html = R"html(
 <!DOCTYPE html>
 <html>
@@ -36,14 +42,30 @@ const char* html = R"html(
         }
         .on { background-color: #4CAF50; }
         .off { background-color: #f44336; }
+        #time {
+            font-size: 24px;
+            margin: 20px;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
+    <div id="time">Loading time...</div>
     <button class="button" onclick="toggleRelay(1)" id="btn1">Relay 1</button>
     <button class="button" onclick="toggleRelay(2)" id="btn2">Relay 2</button>
     <button class="button" onclick="toggleRelay(3)" id="btn3">Relay 3</button>
     <button class="button" onclick="toggleRelay(4)" id="btn4">Relay 4</button>
     <script>
+        function updateTime() {
+            fetch('/time')
+                .then(response => response.text())
+                .then(time => {
+                    document.getElementById('time').innerHTML = time;
+                });
+        }
+        setInterval(updateTime, 1000);
+        updateTime();
+
         function toggleRelay(relay) {
             fetch('/relay/' + relay)
                 .then(response => response.json())
@@ -82,18 +104,27 @@ void setup() {
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
 
+  timeClient.begin();
+  timeClient.setTimeOffset(19800);
+
   // Setup web server routes
   server.on("/", HTTP_GET, handleRoot);
   server.on("/relay/1", HTTP_GET, handleRelay1);
   server.on("/relay/2", HTTP_GET, handleRelay2);
   server.on("/relay/3", HTTP_GET, handleRelay3);
   server.on("/relay/4", HTTP_GET, handleRelay4);
+  server.on("/time", HTTP_GET, handleTime);
   
   server.begin();
 }
 
 void loop() {
   server.handleClient();
+  unsigned long currentMillis = millis();
+    if (currentMillis - lastTimeUpdate >= timeUpdateInterval) {
+        timeClient.update();
+        lastTimeUpdate = currentMillis;
+    }
 }
 
 void handleRoot() {
@@ -123,4 +154,9 @@ void handleRelay3() {
 void handleRelay4() {
   toggleRelay(relay4, relay4State);
   server.send(200, "application/json", "{\"state\":" + String(relay4State) + "}");
+}
+
+void handleTime() {
+    String formattedTime = timeClient.getFormattedTime();
+    server.send(200, "text/plain", formattedTime);
 }
