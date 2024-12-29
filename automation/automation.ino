@@ -122,33 +122,78 @@ const char* html = R"html(
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        .button { 
-            padding: 15px 25px;
-            margin: 10px;
-            font-size: 16px;
-            cursor: pointer;
-            display: block;
-            width: 200px;
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            font-size: 18px; 
         }
-        .on { background-color: #4CAF50; }
-        .off { background-color: #f44336; }
         #time {
-            font-size: 24px;
+            font-size: 36px; 
             margin: 20px;
             font-family: monospace;
+            color: #333;
+            text-align: center;
+        }
+        .relay-buttons {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            width: 100%;
+            margin: 20px auto;
+        }
+        .button {
+            padding: 15px 25px;
+            color: #fff;
+            background-color: #008CBA;
+            border: none;
+            border-radius: 4px;
+            font-size: 18px;
+            cursor: pointer;
+            min-width: 150px;
+            text-align: center;
+            text-decoration: none;
+            margin: 5px;
+        }
+        .on {
+            background-color: #4CAF50;
+        }
+        .off {
+            background-color: #f44336;
         }
         .schedule-form {
-            margin: 20px;
+            margin: 20px auto;
             padding: 20px;
+            max-width: 400px;
+            background-color: #fff;
             border: 1px solid #ccc;
+            border-radius: 4px;
         }
         .schedule-table {
-            margin: 20px;
+            margin: 20px auto;
+            width: 90%;
             border-collapse: collapse;
+            background-color: #fff;
         }
-        .schedule-table td, .schedule-table th {
+        .schedule-table th {
+            background-color: #f2f2f2;
+            padding: 10px;
+            text-align: left;
+        }
+        .schedule-table td {
             border: 1px solid #ddd;
             padding: 8px;
+        }
+        @media screen and (max-width: 600px) {
+            body {
+                font-size: 16px; 
+            }
+            .button {
+                width: 100%;
+                margin: 5px 0;
+            }
         }
     </style>
 </head>
