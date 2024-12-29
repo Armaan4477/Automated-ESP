@@ -102,14 +102,15 @@ void IRAM_ATTR setup() {
     }
 
     server.on("/", HTTP_GET, handleRoot);
-    server.on("/relay/1", HTTP_GET, handleRelay1);
-    server.on("/relay/2", HTTP_GET, handleRelay2);
-    server.on("/relay/3", HTTP_GET, handleRelay3);
-    server.on("/relay/4", HTTP_GET, handleRelay4);
+    server.on("/relay/1", HTTP_ANY, handleRelay1);
+    server.on("/relay/2", HTTP_ANY, handleRelay2);
+    server.on("/relay/3", HTTP_ANY, handleRelay3);
+    server.on("/relay/4", HTTP_ANY, handleRelay4);
     server.on("/time", HTTP_GET, handleTime);
     server.on("/schedules", HTTP_GET, handleGetSchedules);
     server.on("/schedule/add", HTTP_POST, handleAddSchedule);
     server.on("/schedule/delete", HTTP_DELETE, handleDeleteSchedule);
+    server.on("/relay/status", HTTP_GET, handleRelayStatus);
     server.begin();
     EEPROM.begin(EEPROM_SIZE);
     loadSchedulesFromEEPROM();
@@ -182,6 +183,12 @@ const char* html = R"html(
     </table>
 
     <script>
+        let relayStates = {
+            1: false,
+            2: false,
+            3: false,
+            4: false
+        };
         function updateTime() {
             fetch('/time')
                 .then(response => response.text())
@@ -191,14 +198,28 @@ const char* html = R"html(
         }
 
         function toggleRelay(relay) {
-            fetch('/relay/' + relay)
-                .then(response => response.json())
-                .then(data => {
-                    let btn = document.getElementById('btn' + relay);
-                    btn.className = 'button ' + (data.state ? 'on' : 'off');
-                });
+            fetch('/relay/' + relay, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Relay ' + relay + ' state:', data.state); // Debug logging
+                relayStates[relay] = data.state;
+                updateButtonStyle(relay);
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to toggle relay ' + relay);
+            });
         }
-
         function addSchedule() {
             const relay = document.getElementById('relaySelect').value;
             const onTime = document.getElementById('onTime').value;
@@ -265,12 +286,31 @@ const char* html = R"html(
                   });
               });
       }
+      function updateButtonStyle(relay) {
+          const btn = document.getElementById('btn' + relay);
+          if (btn) {
+              btn.className = 'button ' + (relayStates[relay] ? 'on' : 'off');
+              btn.textContent = 'Relay ' + relay + (relayStates[relay] ? ' (ON)' : ' (OFF)');
+          }
+      }
+
+      function getInitialStates() {
+          fetch('/relay/status')
+              .then(response => response.json())
+              .then(data => {
+                  relayStates = data;
+                  for(let relay = 1; relay <= 4; relay++) {
+                      updateButtonStyle(relay);
+                  }
+              });
+      }
 
         
 
         setInterval(updateTime, 1000);
         updateTime();
         loadSchedules();
+        getInitialStates();
     </script>
 </body>
 </html>
@@ -390,29 +430,48 @@ void handleRoot() {
   server.send(200, "text/html", html);
 }
 
+// Update the toggleRelay helper function
 void toggleRelay(int relayPin, bool &relayState) {
-  relayState = !relayState;
-  digitalWrite(relayPin, relayState ? LOW : HIGH);
+    relayState = !relayState;
+    digitalWrite(relayPin, relayState ? LOW : HIGH);
+    Serial.printf("Relay state changed to: %d\n", relayState); // Debug logging
 }
 
+// Update the handleRelay functions
 void handleRelay1() {
-  toggleRelay(relay1, relay1State);
-  server.send(200, "application/json", "{\"state\":" + String(relay1State) + "}");
+    if (server.method() == HTTP_POST) {
+        toggleRelay(relay1, relay1State);
+        server.send(200, "application/json", "{\"state\":" + String(relay1State) + "}");
+    } else if (server.method() == HTTP_GET) {
+        server.send(200, "application/json", "{\"state\":" + String(relay1State) + "}");
+    }
 }
 
 void handleRelay2() {
-  toggleRelay(relay2, relay2State);
-  server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
+    if (server.method() == HTTP_POST) {
+        toggleRelay(relay2, relay2State);
+        server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
+    } else if (server.method() == HTTP_GET) {
+        server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
+    }
 }
 
 void handleRelay3() {
-  toggleRelay(relay3, relay3State);
-  server.send(200, "application/json", "{\"state\":" + String(relay3State) + "}");
+    if (server.method() == HTTP_POST) {
+        toggleRelay(relay3, relay3State);
+        server.send(200, "application/json", "{\"state\":" + String(relay3State) + "}");
+    } else if (server.method() == HTTP_GET) {
+        server.send(200, "application/json", "{\"state\":" + String(relay3State) + "}");
+    }
 }
 
 void handleRelay4() {
-  toggleRelay(relay4, relay4State);
-  server.send(200, "application/json", "{\"state\":" + String(relay4State) + "}");
+    if (server.method() == HTTP_POST) {
+        toggleRelay(relay4, relay4State);
+        server.send(200, "application/json", "{\"state\":" + String(relay4State) + "}");
+    } else if (server.method() == HTTP_GET) {
+        server.send(200, "application/json", "{\"state\":" + String(relay4State) + "}");
+    }
 }
 
 void handleTime() {
@@ -425,4 +484,13 @@ void handleTime() {
                         (seconds < 10 ? "0" : "") + String(seconds);
                         
   server.send(200, "text/plain", formattedTime);
+}
+
+void handleRelayStatus() {
+    String json = "{";
+    json += "\"1\":" + String(relay1State) + ",";
+    json += "\"2\":" + String(relay2State) + ",";
+    json += "\"3\":" + String(relay3State) + ",";
+    json += "\"4\":" + String(relay4State) + "}";
+    server.send(200, "application/json", json);
 }
