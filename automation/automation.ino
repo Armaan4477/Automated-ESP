@@ -19,6 +19,8 @@ WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 unsigned long lastTimeUpdate = 0;
 const long timeUpdateInterval = 1000;
+unsigned long epochTime = 0;
+unsigned long lastNTPSync = 0;
 ESP8266WebServer server(80);
 
 void IRAM_ATTR setup() {
@@ -47,6 +49,10 @@ void IRAM_ATTR setup() {
 
   timeClient.begin();
   timeClient.setTimeOffset(19800);
+  timeClient.update();
+  epochTime = timeClient.getEpochTime();
+  lastNTPSync = millis();
+  Serial.println("Initial time sync complete");
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/relay/1", HTTP_GET, handleRelay1);
@@ -114,8 +120,9 @@ const char* html = R"html(
 void loop() {
   server.handleClient();
   unsigned long currentMillis = millis();
-  if (currentMillis - lastTimeUpdate >= timeUpdateInterval) {
-    timeClient.update();
+  
+  if (currentMillis - lastTimeUpdate >= 1000) {
+    epochTime++;
     lastTimeUpdate = currentMillis;
   }
 }
@@ -150,6 +157,13 @@ void handleRelay4() {
 }
 
 void handleTime() {
-  String formattedTime = timeClient.getFormattedTime();
+  unsigned long hours = ((epochTime % 86400L) / 3600);
+  unsigned long minutes = ((epochTime % 3600) / 60);
+  unsigned long seconds = (epochTime % 60);
+
+  String formattedTime = String(hours) + ":" + 
+                        (minutes < 10 ? "0" : "") + String(minutes) + ":" + 
+                        (seconds < 10 ? "0" : "") + String(seconds);
+                        
   server.send(200, "text/plain", formattedTime);
 }
