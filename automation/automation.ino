@@ -4,6 +4,7 @@
 #include <WiFiUdp.h>
 #include <vector>
 #include <ArduinoJson.h>
+#include <EEPROM.h>
 
 struct Schedule {
     int id;
@@ -39,7 +40,37 @@ bool validTimeSync = false;
 std::vector<Schedule> schedules;
 void handleAddSchedule();
 void handleDeleteSchedule();
+const int EEPROM_SIZE = 512;
+const int SCHEDULE_SIZE = sizeof(Schedule);
+const int MAX_SCHEDULES = 10;
+const int SCHEDULE_START_ADDR = 0;
 ESP8266WebServer server(80);
+
+void saveSchedulesToEEPROM() {
+    int addr = SCHEDULE_START_ADDR;
+    EEPROM.write(addr, schedules.size());
+    addr++;
+    
+    for(const Schedule& schedule : schedules) {
+        EEPROM.put(addr, schedule);
+        addr += SCHEDULE_SIZE;
+    }
+    EEPROM.commit();
+}
+
+void loadSchedulesFromEEPROM() {
+    schedules.clear();
+    int addr = SCHEDULE_START_ADDR;
+    int count = EEPROM.read(addr);
+    addr++;
+    
+    for(int i = 0; i < count && i < MAX_SCHEDULES; i++) {
+        Schedule schedule;
+        EEPROM.get(addr, schedule);
+        schedules.push_back(schedule);
+        addr += SCHEDULE_SIZE;
+    }
+}
 
 void IRAM_ATTR setup() {
     pinMode(relay1, OUTPUT);
@@ -80,6 +111,8 @@ void IRAM_ATTR setup() {
     server.on("/schedule/add", HTTP_POST, handleAddSchedule);
     server.on("/schedule/delete", HTTP_DELETE, handleDeleteSchedule);
     server.begin();
+    EEPROM.begin(EEPROM_SIZE);
+    loadSchedulesFromEEPROM();
 }
 
 const char* html = R"html(
@@ -247,12 +280,10 @@ void loop() {
     server.handleClient();
     unsigned long currentMillis = millis();
     
-    // Update time every second
     if (currentMillis - lastTimeUpdate >= 1000) {
         epochTime++;
         lastTimeUpdate = currentMillis;
         
-        // Check schedules every second instead of waiting for minute changes
         if (validTimeSync) {
             checkSchedules();
         }
@@ -298,7 +329,7 @@ void handleGetSchedules() {
     String json = "[";
     for (size_t i = 0; i < schedules.size(); i++) {
         if (i > 0) json += ",";
-        json += "{\"id\":" + String(i) + ","; // Add ID
+        json += "{\"id\":" + String(i) + ",";
         json += "\"relay\":" + String(schedules[i].relayNumber) + ",";
         json += "\"onHour\":" + String(schedules[i].onHour) + ",";
         json += "\"onMinute\":" + String(schedules[i].onMinute) + ",";
@@ -318,12 +349,11 @@ void handleAddSchedule() {
         
         if (!error) {
             Schedule newSchedule;
-            newSchedule.id = schedules.size(); // Auto-increment ID
+            newSchedule.id = schedules.size();
             newSchedule.relayNumber = doc["relay"];
             String onTime = doc["onTime"];
             String offTime = doc["offTime"];
-            
-            // Parse time strings
+
             newSchedule.onHour = onTime.substring(0, 2).toInt();
             newSchedule.onMinute = onTime.substring(3).toInt();
             newSchedule.offHour = offTime.substring(0, 2).toInt();
@@ -331,6 +361,7 @@ void handleAddSchedule() {
             newSchedule.enabled = true;
             
             schedules.push_back(newSchedule);
+            saveSchedulesToEEPROM(); 
             server.send(200, "application/json", "{\"status\":\"success\"}");
             return;
         }
@@ -345,6 +376,7 @@ void handleDeleteSchedule() {
         
         if (id >= 0 && id < schedules.size()) {
             schedules.erase(schedules.begin() + id);
+            saveSchedulesToEEPROM();
             Serial.println("Schedule deleted successfully");
             server.send(200, "application/json", "{\"status\":\"success\"}");
             return;
