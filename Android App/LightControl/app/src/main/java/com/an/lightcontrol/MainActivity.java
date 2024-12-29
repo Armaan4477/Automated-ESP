@@ -47,11 +47,14 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < relayButtons.length; i++) {
             final int relayNumber = i + 1;
             relayButtons[i].setOnCheckedChangeListener((buttonView, isChecked) -> {
-                if (buttonView.isPressed()) { // Only trigger if user pressed the button
+                if (buttonView.isPressed()) {
                     toggleRelay(relayNumber);
                 }
             });
         }
+
+        // Immediately get the current states on launch
+        updateRelayStates();
 
         // Start periodic updates
         startPeriodicUpdates();
@@ -98,26 +101,38 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "Status update failed: " + e.getMessage());
+                runOnUiThread(() -> statusText.setText("Failed to update relay states"));
             }
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
                 if (response.isSuccessful()) {
+                    String responseBody = response.body().string();
+                    Log.d(TAG, "Relay Status Response: " + responseBody);
                     try {
-                        JSONObject states = new JSONObject(response.body().string());
+                        JSONObject states = new JSONObject(responseBody);
                         runOnUiThread(() -> {
                             try {
                                 for (int i = 0; i < relayButtons.length; i++) {
-                                    boolean state = states.getBoolean(String.valueOf(i + 1));
+                                    // Parse relay state as integer and convert to boolean
+                                    int stateInt = states.optInt(String.valueOf(i + 1), 0); // Default to 0 if key not found
+                                    boolean state = (stateInt == 1);
                                     relayButtons[i].setChecked(state);
+                                    Log.d(TAG, "Relay " + (i + 1) + " state: " + state);
                                 }
+                                statusText.setText("Relay states updated");
                             } catch (Exception e) {
                                 Log.e(TAG, "Error parsing relay states", e);
+                                statusText.setText("Error parsing relay states");
                             }
                         });
                     } catch (Exception e) {
                         Log.e(TAG, "Error parsing response", e);
+                        runOnUiThread(() -> statusText.setText("Error parsing response"));
                     }
+                } else {
+                    Log.e(TAG, "Unsuccessful response: " + response.code());
+                    runOnUiThread(() -> statusText.setText("Error: " + response.code()));
                 }
             }
         });
