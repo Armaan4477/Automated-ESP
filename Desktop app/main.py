@@ -242,22 +242,19 @@ class ESPControl(QMainWindow):
     def toggle_relay(self, relay_num):
         try:
             url = f"http://{self.esp_ip}/relay/{relay_num}"
-            response = requests.get(url, timeout=5)
-            
+            response = requests.post(url, json={}, timeout=5)
             if response.status_code == 200:
-                self.status_label.setText(f"Relay {relay_num} toggled successfully")
+                data = response.json()
+                state = data.get("state", False)
+                self.buttons[relay_num - 1].setChecked(bool(state))
+                self.status_label.setText(f"Relay {relay_num} toggled to {'ON' if state else 'OFF'}")
                 self.update_button_styles()
             else:
                 self.status_label.setText(f"Error: {response.status_code}")
-                self.buttons[relay_num-1].setChecked(
-                    not self.buttons[relay_num-1].isChecked()
-                )
-                
-        except requests.exceptions.RequestException as e:
+                self.buttons[relay_num - 1].setChecked(not self.buttons[relay_num - 1].isChecked())
+        except requests.exceptions.RequestException:
             self.status_label.setText("Connection Error")
-            self.buttons[relay_num-1].setChecked(
-                not self.buttons[relay_num-1].isChecked()
-            )
+            self.buttons[relay_num - 1].setChecked(not self.buttons[relay_num - 1].isChecked())
 
 def main():
     app = QApplication(sys.argv)
