@@ -95,6 +95,7 @@ class ESPControl(QMainWindow):
         
         # Initial updates
         self.update_schedules()
+        self.fetch_relay_states()
         
     def init_time_display(self, layout):
         self.time_label = QLabel("Loading time...")
@@ -255,6 +256,19 @@ class ESPControl(QMainWindow):
         except requests.exceptions.RequestException:
             self.status_label.setText("Connection Error")
             self.buttons[relay_num - 1].setChecked(not self.buttons[relay_num - 1].isChecked())
+
+    def fetch_relay_states(self):
+        try:
+            response = requests.get(f"http://{self.esp_ip}/relay/status")
+            if response.status_code == 200:
+                states = response.json()
+                for i, btn in enumerate(self.buttons, start=1):
+                    btn.setChecked(states.get(str(i), False))
+                self.update_button_styles()
+            else:
+                self.status_label.setText("Failed to fetch relay states")
+        except requests.exceptions.RequestException:
+            self.status_label.setText("Connection Error")
 
 def main():
     app = QApplication(sys.argv)
