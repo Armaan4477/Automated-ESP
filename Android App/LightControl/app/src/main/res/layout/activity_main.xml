@@ -6,6 +6,15 @@
     android:padding="16dp">
 
     <TextView
+        android:id="@+id/timeText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Time: --:--:--"
+        android:textAlignment="center"
+        android:textSize="24sp"
+        android:layout_marginBottom="20dp"/>
+
+    <TextView
         android:id="@+id/statusText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -14,31 +23,36 @@
         android:textSize="20sp"
         android:layout_marginBottom="20dp"/>
 
-    <Button
+    <ToggleButton
         android:id="@+id/relay1Button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Relay 1"
+        android:textOn="Relay 1 ON"
+        android:textOff="Relay 1 OFF"
         android:layout_marginBottom="10dp"/>
 
-    <Button
+    <ToggleButton
         android:id="@+id/relay2Button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Relay 2"
+        android:textOn="Relay 2 ON"
+        android:textOff="Relay 2 OFF"
         android:layout_marginBottom="10dp"/>
 
-    <Button
+    <ToggleButton
         android:id="@+id/relay3Button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Relay 3"
+        android:textOn="Relay 3 ON"
+        android:textOff="Relay 3 OFF"
         android:layout_marginBottom="10dp"/>
 
-    <Button
+    <ToggleButton
         android:id="@+id/relay4Button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Relay 4"/>
+        android:textOn="Relay 4 ON"
+        android:textOff="Relay 4 OFF"
+        android:layout_marginBottom="10dp"/>
 
 </LinearLayout>

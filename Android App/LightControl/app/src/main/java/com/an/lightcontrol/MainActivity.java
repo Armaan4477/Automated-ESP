@@ -1,12 +1,14 @@
 package com.an.lightcontrol;
 
 import android.os.Bundle;
+import android.os.Handler;
 import android.util.Log;
-import android.widget.Button;
 import android.widget.TextView;
+import android.widget.ToggleButton;
 import androidx.appcompat.app.AppCompatActivity;
 import okhttp3.*;
 import okhttp3.logging.HttpLoggingInterceptor;
+import org.json.JSONObject;
 import java.io.IOException;
 
 public class MainActivity extends AppCompatActivity {
@@ -14,7 +16,10 @@ public class MainActivity extends AppCompatActivity {
     private static final String BASE_URL = "http://192.168.29.17";
     private OkHttpClient client;
     private TextView statusText;
-    private Button[] relayButtons = new Button[4];
+    private TextView timeText;
+    private ToggleButton[] relayButtons = new ToggleButton[4];
+    private final Handler handler = new Handler();
+    private static final int UPDATE_INTERVAL = 1000; // 1 second
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,6 +36,7 @@ public class MainActivity extends AppCompatActivity {
                 .build();
 
         statusText = findViewById(R.id.statusText);
+        timeText = findViewById(R.id.timeText);
 
         // Initialize buttons
         relayButtons[0] = findViewById(R.id.relay1Button);
@@ -40,49 +46,120 @@ public class MainActivity extends AppCompatActivity {
 
         for (int i = 0; i < relayButtons.length; i++) {
             final int relayNumber = i + 1;
-            relayButtons[i].setOnClickListener(v -> toggleRelay(relayNumber));
+            relayButtons[i].setOnCheckedChangeListener((buttonView, isChecked) -> {
+                if (buttonView.isPressed()) { // Only trigger if user pressed the button
+                    toggleRelay(relayNumber);
+                }
+            });
         }
+
+        // Start periodic updates
+        startPeriodicUpdates();
+    }
+
+    private void startPeriodicUpdates() {
+        handler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                updateTime();
+                updateRelayStates();
+                handler.postDelayed(this, UPDATE_INTERVAL);
+            }
+        }, UPDATE_INTERVAL);
+    }
+
+    private void updateTime() {
+        Request request = new Request.Builder()
+                .url(BASE_URL + "/time")
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "Time update failed: " + e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    final String time = response.body().string();
+                    runOnUiThread(() -> timeText.setText("Time: " + time));
+                }
+            }
+        });
+    }
+
+    private void updateRelayStates() {
+        Request request = new Request.Builder()
+                .url(BASE_URL + "/relay/status")
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "Status update failed: " + e.getMessage());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    try {
+                        JSONObject states = new JSONObject(response.body().string());
+                        runOnUiThread(() -> {
+                            try {
+                                for (int i = 0; i < relayButtons.length; i++) {
+                                    boolean state = states.getBoolean(String.valueOf(i + 1));
+                                    relayButtons[i].setChecked(state);
+                                }
+                            } catch (Exception e) {
+                                Log.e(TAG, "Error parsing relay states", e);
+                            }
+                        });
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error parsing response", e);
+                    }
+                }
+            }
+        });
     }
 
     private void toggleRelay(int relayNumber) {
-        Log.d(TAG, "Attempting to toggle relay " + relayNumber);
-
         Request request = new Request.Builder()
                 .url(BASE_URL + "/relay/" + relayNumber)
+                .post(RequestBody.create(null, new byte[0]))
                 .build();
 
-        Log.d(TAG, "Sending request to: " + request.url());
+        relayButtons[relayNumber-1].setEnabled(false);
 
         client.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
                 Log.e(TAG, "Network error: " + e.getMessage(), e);
                 runOnUiThread(() -> {
-                    String errorMessage = "Connection Error: " + e.getMessage();
-                    statusText.setText(errorMessage);
-                    Log.d(TAG, "UI updated with error: " + errorMessage);
+                    statusText.setText("Connection Error: " + e.getMessage());
                     relayButtons[relayNumber-1].setEnabled(true);
+                    updateRelayStates(); // Refresh states
                 });
             }
 
             @Override
             public void onResponse(Call call, Response response) {
-                Log.d(TAG, "Response received. Code: " + response.code());
                 runOnUiThread(() -> {
-                    if (response.isSuccessful()) {
-                        String message = "Relay " + relayNumber + " toggled";
-                        statusText.setText(message);
-                        Log.d(TAG, message);
-                    } else {
-                        String error = "Error: " + response.code();
-                        statusText.setText(error);
-                        Log.e(TAG, error);
-                    }
                     relayButtons[relayNumber-1].setEnabled(true);
+                    if (response.isSuccessful()) {
+                        statusText.setText("Relay " + relayNumber + " toggled");
+                    } else {
+                        statusText.setText("Error: " + response.code());
+                        updateRelayStates(); // Refresh states
+                    }
                 });
             }
         });
+    }
 
-        relayButtons[relayNumber-1].setEnabled(false);
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        handler.removeCallbacksAndMessages(null);
     }
 }
