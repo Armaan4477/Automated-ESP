@@ -8,8 +8,19 @@ import android.widget.ToggleButton;
 import androidx.appcompat.app.AppCompatActivity;
 import okhttp3.*;
 import okhttp3.logging.HttpLoggingInterceptor;
+
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.IOException;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Spinner;
+import android.widget.TableLayout;
+import android.widget.TableRow;
+import android.widget.Toast;
+import android.util.Log;
 
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "ESP8266Control";
@@ -20,6 +31,7 @@ public class MainActivity extends AppCompatActivity {
     private ToggleButton[] relayButtons = new ToggleButton[4];
     private final Handler handler = new Handler();
     private static final int UPDATE_INTERVAL = 1000; // 1 second
+    private static final String TAG2 = "MainActivity";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -43,6 +55,21 @@ public class MainActivity extends AppCompatActivity {
         relayButtons[1] = findViewById(R.id.relay2Button);
         relayButtons[2] = findViewById(R.id.relay3Button);
         relayButtons[3] = findViewById(R.id.relay4Button);
+        Button addScheduleButton = findViewById(R.id.addScheduleButton);
+        Spinner relaySpinner = findViewById(R.id.relaySelect);
+        EditText onTimeInput = findViewById(R.id.onTime);
+        EditText offTimeInput = findViewById(R.id.offTime);
+
+        addScheduleButton.setOnClickListener(v -> {
+            int relay = Integer.parseInt(relaySpinner.getSelectedItem().toString().split(" ")[1]);
+            String onTime = onTimeInput.getText().toString();
+            String offTime = offTimeInput.getText().toString();
+            if (!onTime.isEmpty() && !offTime.isEmpty()) {
+                addSchedule(relay, onTime, offTime);
+            } else {
+                Toast.makeText(MainActivity.this, "Please enter valid times", Toast.LENGTH_SHORT).show();
+            }
+        });
 
         for (int i = 0; i < relayButtons.length; i++) {
             final int relayNumber = i + 1;
@@ -58,6 +85,7 @@ public class MainActivity extends AppCompatActivity {
 
         // Start periodic updates
         startPeriodicUpdates();
+        fetchSchedules();
     }
 
     private void startPeriodicUpdates() {
@@ -170,6 +198,149 @@ public class MainActivity extends AppCompatActivity {
                 });
             }
         });
+    }
+
+    private void fetchSchedules() {
+        Request request = new Request.Builder()
+                .url(BASE_URL + "/schedules")
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Failed to fetch schedules", Toast.LENGTH_SHORT).show());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    String responseBody = response.body().string();
+                    runOnUiThread(() -> updateScheduleTable(responseBody));
+                } else {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Error fetching schedules", Toast.LENGTH_SHORT).show());
+                }
+            }
+        });
+    }
+
+    private void addSchedule(int relay, String onTime, String offTime) {
+        JSONObject json = new JSONObject();
+        try {
+            json.put("relay", relay);
+            json.put("onTime", onTime);
+            json.put("offTime", offTime);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        RequestBody body = RequestBody.create(json.toString(), MediaType.parse("application/json"));
+
+        Request request = new Request.Builder()
+                .url(BASE_URL + "/schedule/add")
+                .post(body)
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Failed to add schedule", Toast.LENGTH_SHORT).show());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "Schedule added", Toast.LENGTH_SHORT).show();
+                        fetchSchedules();
+                    });
+                } else {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Error adding schedule", Toast.LENGTH_SHORT).show());
+                }
+            }
+        });
+    }
+
+    private void deleteSchedule(int id) {
+        HttpUrl url = HttpUrl.parse(BASE_URL + "/schedule/delete").newBuilder()
+                .addQueryParameter("id", String.valueOf(id))
+                .build();
+
+        Request request = new Request.Builder()
+                .url(url)
+                .delete()
+                .build();
+
+        client.newCall(request).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this, "Failed to delete schedule", Toast.LENGTH_SHORT).show());
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this, "Schedule deleted", Toast.LENGTH_SHORT).show();
+                        fetchSchedules();
+                    });
+                } else {
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Error deleting schedule", Toast.LENGTH_SHORT).show());
+                }
+            }
+        });
+    }
+
+    private void updateScheduleTable(String json) {
+        Log.d(TAG2, "Received JSON: " + json); // Log the JSON response
+        try {
+            JSONArray schedules = new JSONArray(json);
+            TableLayout table = findViewById(R.id.scheduleTable);
+
+            // Remove existing rows except the header
+            if (table.getChildCount() > 1) {
+                table.removeViews(1, table.getChildCount() - 1);
+            }
+
+            for (int i = 0; i < schedules.length(); i++) {
+                JSONObject schedule = schedules.getJSONObject(i);
+                int id = schedule.getInt("id");
+                int relay = schedule.getInt("relay");
+                int onHour = schedule.getInt("onHour");
+                int onMinute = schedule.getInt("onMinute");
+                int offHour = schedule.getInt("offHour");
+                int offMinute = schedule.getInt("offMinute");
+                boolean enabled = schedule.getBoolean("enabled");
+
+                TableRow row = new TableRow(this);
+
+                TextView relayView = new TextView(this);
+                relayView.setText("Relay " + relay);
+                row.addView(relayView);
+
+                TextView onTimeView = new TextView(this);
+                onTimeView.setText(String.format("%02d:%02d", onHour, onMinute));
+                row.addView(onTimeView);
+
+                TextView offTimeView = new TextView(this);
+                offTimeView.setText(String.format("%02d:%02d", offHour, offMinute));
+                row.addView(offTimeView);
+
+                TextView statusView = new TextView(this);
+                statusView.setText(enabled ? "Active" : "Inactive");
+                row.addView(statusView);
+
+                Button deleteButton = new Button(this);
+                deleteButton.setText("Delete");
+                int scheduleId = id;
+                deleteButton.setOnClickListener(v -> deleteSchedule(scheduleId));
+                row.addView(deleteButton);
+
+                table.addView(row);
+            }
+        } catch (JSONException e) {
+            Log.e(TAG2, "JSON Parsing Error: " + e.getMessage());
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, "Error parsing schedules", Toast.LENGTH_SHORT).show());
+        }
     }
 
     @Override
