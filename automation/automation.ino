@@ -6,6 +6,7 @@
 #include <ArduinoJson.h>
 
 struct Schedule {
+    int id;
     int relayNumber;
     int onHour;
     int onMinute;
@@ -36,6 +37,8 @@ unsigned long lastScheduleCheck = 0;
 unsigned long lastSecond = 0;
 bool validTimeSync = false;
 std::vector<Schedule> schedules;
+void handleAddSchedule();
+void handleDeleteSchedule();
 ESP8266WebServer server(80);
 
 void IRAM_ATTR setup() {
@@ -76,7 +79,6 @@ void IRAM_ATTR setup() {
     server.on("/schedules", HTTP_GET, handleGetSchedules);
     server.on("/schedule/add", HTTP_POST, handleAddSchedule);
     server.on("/schedule/delete", HTTP_DELETE, handleDeleteSchedule);
-    
     server.begin();
 }
 
@@ -182,34 +184,56 @@ const char* html = R"html(
             }).then(() => loadSchedules());
         }
 
-        function loadSchedules() {
-            fetch('/schedules')
-                .then(response => response.json())
-                .then(schedules => {
-                    const table = document.getElementById('scheduleTable');
-                    // Clear existing rows except header
-                    while (table.rows.length > 1) {
-                        table.deleteRow(1);
-                    }
-                    
-                    schedules.forEach(schedule => {
-                        const row = table.insertRow();
-                        row.insertCell(0).textContent = `Relay ${schedule.relay}`;
-                        row.insertCell(1).textContent = `${schedule.onHour}:${schedule.onMinute}`;
-                        row.insertCell(2).textContent = `${schedule.offHour}:${schedule.offMinute}`;
-                        row.insertCell(3).textContent = schedule.enabled ? 'Active' : 'Inactive';
-                        const deleteBtn = document.createElement('button');
-                        deleteBtn.textContent = 'Delete';
-                        deleteBtn.onclick = () => deleteSchedule(schedule.id);
-                        row.insertCell(4).appendChild(deleteBtn);
-                    });
-                });
-        }
-
         function deleteSchedule(id) {
-            fetch(`/schedule/delete/${id}`, { method: 'DELETE' })
-                .then(() => loadSchedules());
-        }
+          fetch('/schedule/delete?id=' + id, {
+              method: 'DELETE',
+              headers: {
+                  'Content-Type': 'application/json'
+              }
+          })
+          .then(response => {
+              if (!response.ok) {
+                  throw new Error('Failed to delete schedule');
+              }
+              return response.json();
+          })
+          .then(data => {
+              if (data.status === 'success') {
+                  loadSchedules();
+              } else {
+                  throw new Error('Server returned error');
+              }
+          })
+          .catch(error => {
+              console.error('Error:', error);
+              alert('Failed to delete schedule: ' + error.message);
+          });
+      }
+
+      function loadSchedules() {
+          fetch('/schedules')
+              .then(response => response.json())
+              .then(schedules => {
+                  const table = document.getElementById('scheduleTable');
+                  while (table.rows.length > 1) {
+                      table.deleteRow(1);
+                  }
+                  
+                  schedules.forEach((schedule, index) => {
+                      const row = table.insertRow();
+                      row.insertCell(0).textContent = `Relay ${schedule.relay}`;
+                      row.insertCell(1).textContent = `${schedule.onHour}:${schedule.onMinute}`;
+                      row.insertCell(2).textContent = `${schedule.offHour}:${schedule.offMinute}`;
+                      row.insertCell(3).textContent = schedule.enabled ? 'Active' : 'Inactive';
+                      const deleteBtn = document.createElement('button');
+                      deleteBtn.textContent = 'Delete';
+                      deleteBtn.onclick = () => deleteSchedule(index);
+                      row.insertCell(4).appendChild(deleteBtn);
+                  });
+              });
+      }
+
+        
 
         setInterval(updateTime, 1000);
         updateTime();
@@ -274,7 +298,8 @@ void handleGetSchedules() {
     String json = "[";
     for (size_t i = 0; i < schedules.size(); i++) {
         if (i > 0) json += ",";
-        json += "{\"relay\":" + String(schedules[i].relayNumber) + ",";
+        json += "{\"id\":" + String(i) + ","; // Add ID
+        json += "\"relay\":" + String(schedules[i].relayNumber) + ",";
         json += "\"onHour\":" + String(schedules[i].onHour) + ",";
         json += "\"onMinute\":" + String(schedules[i].onMinute) + ",";
         json += "\"offHour\":" + String(schedules[i].offHour) + ",";
@@ -293,6 +318,7 @@ void handleAddSchedule() {
         
         if (!error) {
             Schedule newSchedule;
+            newSchedule.id = schedules.size(); // Auto-increment ID
             newSchedule.relayNumber = doc["relay"];
             String onTime = doc["onTime"];
             String offTime = doc["offTime"];
@@ -306,22 +332,26 @@ void handleAddSchedule() {
             
             schedules.push_back(newSchedule);
             server.send(200, "application/json", "{\"status\":\"success\"}");
-        } else {
-            server.send(400, "application/json", "{\"status\":\"error\"}");
+            return;
         }
     }
+    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
 }
 
 void handleDeleteSchedule() {
     if (server.hasArg("id")) {
         int id = server.arg("id").toInt();
+        Serial.println("Delete request for schedule ID: " + String(id));
+        
         if (id >= 0 && id < schedules.size()) {
             schedules.erase(schedules.begin() + id);
+            Serial.println("Schedule deleted successfully");
             server.send(200, "application/json", "{\"status\":\"success\"}");
-        } else {
-            server.send(400, "application/json", "{\"status\":\"error\"}");
+            return;
         }
     }
+    Serial.println("Invalid delete request");
+    server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
 }
 
 void handleRoot() {
