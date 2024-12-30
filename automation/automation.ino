@@ -57,6 +57,15 @@ const int EEPROM_SIZE = 512;
 const int SCHEDULE_SIZE = sizeof(Schedule);
 const int MAX_SCHEDULES = 10;
 const int SCHEDULE_START_ADDR = 0;
+const std::vector<String> allowedIPs = {
+    "192.168.29.3",
+    "192.168.29.5",
+    "192.168.29.6",
+    "192.168.29.9",
+    "192.168.29.10"
+};
+const char* authUsername = "admin";
+const char* authPassword = "12345678";
 ESP8266WebServer server(80);
 
 WebSocketsServer webSocket = WebSocketsServer(81);
@@ -218,6 +227,20 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
         default:
             break;
     }
+}
+
+bool checkAuthentication() {
+    String clientIP = server.client().remoteIP().toString();
+    for (const auto& ip : allowedIPs) {
+        if (clientIP == ip) {
+            return true;
+        }
+    }
+    if (!server.authenticate(authUsername, authPassword)) {
+        server.requestAuthentication();
+        return false;
+    }
+    return true;
 }
 
 const char* html = R"html(
@@ -657,7 +680,7 @@ void loop() {
             checkSchedules();
         }
     }
-    
+
     yield();
 }
 
@@ -794,7 +817,8 @@ void handleDeleteSchedule() {
 }
 
 void handleRoot() {
-    server.send(200, "text/html", html);
+  if (!checkAuthentication()) return;
+  server.send(200, "text/html", html);
 }
 
 void toggleRelay(int relayPin, bool &relayState) {
