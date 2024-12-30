@@ -52,9 +52,77 @@ ESP8266WebServer server(80);
 
 WebSocketsServer webSocket = WebSocketsServer(81);
 
-// Function to indicate an error by lighting up the LED
+void IRAM_ATTR setup() {
+    pinMode(relay1, OUTPUT);
+    pinMode(relay2, OUTPUT);
+    pinMode(switch1Pin, INPUT_PULLUP);
+    pinMode(switch2Pin, INPUT_PULLUP);
+    
+    // Initialize the error LED pin
+    pinMode(errorLEDPin, OUTPUT);
+    digitalWrite(errorLEDPin, LOW);
+    
+    digitalWrite(relay1, HIGH);
+    digitalWrite(relay2, HIGH);
+    
+    Serial.begin(115200);
+    WiFi.begin(ssid, password);
+    unsigned long wifiStartTime = millis();
+    const unsigned long wifiTimeout = 20000;
+    
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+        if (millis() - wifiStartTime > wifiTimeout) {
+            Serial.println("\nWiFi connection failed.");
+            indicateError();
+            break;
+        }
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nConnected to WiFi");
+        Serial.print("IP Address: ");
+        Serial.println(WiFi.localIP());
+        clearError();
+    }
+    
+    timeClient.begin();
+    timeClient.setTimeOffset(19800);
+    
+    if (timeClient.update()) {
+        epochTime = timeClient.getEpochTime();
+        lastNTPSync = millis();
+        validTimeSync = true;
+        Serial.println("Time sync successful");
+        clearError();
+    } else {
+        Serial.println("Time sync failed.");
+        indicateError();
+    }
+
+    server.on("/", HTTP_GET, handleRoot);
+    server.on("/relay/1", HTTP_ANY, handleRelay1);
+    server.on("/relay/2", HTTP_ANY, handleRelay2);
+    server.on("/time", HTTP_GET, handleTime);
+    server.on("/schedules", HTTP_GET, handleGetSchedules);
+    server.on("/schedule/add", HTTP_POST, handleAddSchedule);
+    server.on("/schedule/delete", HTTP_DELETE, handleDeleteSchedule);
+    server.on("/relay/status", HTTP_GET, handleRelayStatus);
+    server.begin();
+    EEPROM.begin(EEPROM_SIZE);
+    loadSchedulesFromEEPROM();
+
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
+}
+
 void indicateError() {
     digitalWrite(errorLEDPin, HIGH);
+}
+
+void clearError() {
+    digitalWrite(errorLEDPin, LOW);
 }
 
 void saveSchedulesToEEPROM() {
@@ -83,60 +151,11 @@ void loadSchedulesFromEEPROM() {
     }
 }
 
-void IRAM_ATTR setup() {
-    pinMode(relay1, OUTPUT);
-    pinMode(relay2, OUTPUT);
-    pinMode(switch1Pin, INPUT_PULLUP);
-    pinMode(switch2Pin, INPUT_PULLUP);
-    
-    // Initialize the error LED pin
-    pinMode(errorLEDPin, OUTPUT);
-    digitalWrite(errorLEDPin, LOW);
-    
-    digitalWrite(relay1, HIGH);
-    digitalWrite(relay2, HIGH);
-    
-    Serial.begin(115200);
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    
-    Serial.println("\nConnected to WiFi");
-    Serial.print("IP Address: ");
-    Serial.println(WiFi.localIP());
-    timeClient.begin();
-    timeClient.setTimeOffset(19800);
-    
-    if (timeClient.update()) {
-        epochTime = timeClient.getEpochTime();
-        lastNTPSync = millis();
-        validTimeSync = true;
-        Serial.println("Time sync successful");
-    }
-
-    server.on("/", HTTP_GET, handleRoot);
-    server.on("/relay/1", HTTP_ANY, handleRelay1);
-    server.on("/relay/2", HTTP_ANY, handleRelay2);
-    server.on("/time", HTTP_GET, handleTime);
-    server.on("/schedules", HTTP_GET, handleGetSchedules);
-    server.on("/schedule/add", HTTP_POST, handleAddSchedule);
-    server.on("/schedule/delete", HTTP_DELETE, handleDeleteSchedule);
-    server.on("/relay/status", HTTP_GET, handleRelayStatus);
-    server.begin();
-    EEPROM.begin(EEPROM_SIZE);
-    loadSchedulesFromEEPROM();
-
-    webSocket.begin();
-    webSocket.onEvent(webSocketEvent);
-}
-
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
     switch(type) {
         case WStype_DISCONNECTED:
             Serial.printf("WebSocket[%u] Disconnected!\n", num);
-            indicateError(); // Indicate error on WebSocket disconnection
+            indicateError();
             break;
         case WStype_CONNECTED: {
             IPAddress ip = webSocket.remoteIP(num);
@@ -460,6 +479,10 @@ void loop() {
             lastNTPSync = millis();
             validTimeSync = true;
             Serial.println("Time sync successful (retry)");
+            clearError();
+        } else {
+            Serial.println("Time sync failed (retry).");
+            indicateError();
         }
     }
 
@@ -494,7 +517,6 @@ void checkSchedules() {
 void activateRelay(int relayNum, bool manual) {
     if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
         Serial.printf("Relay %d is overridden. Activation skipped.\n", relayNum);
-        indicateError(); // Indicate error if activation is skipped due to override
         return;
     }
     
@@ -516,7 +538,6 @@ void activateRelay(int relayNum, bool manual) {
 void deactivateRelay(int relayNum, bool manual) {
     if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
         Serial.printf("Relay %d is overridden. Deactivation skipped.\n", relayNum);
-        indicateError(); // Indicate error if deactivation is skipped due to override
         return;
     }
     
@@ -579,10 +600,10 @@ void handleAddSchedule() {
             schedules.push_back(newSchedule);
             saveSchedulesToEEPROM(); 
             server.send(200, "application/json", "{\"status\":\"success\"}");
+            clearError();
             broadcastRelayStates();
             return;
         }
-        // Indicate error if JSON deserialization fails
         indicateError();
     }
     server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
@@ -598,10 +619,10 @@ void handleDeleteSchedule() {
             saveSchedulesToEEPROM();
             Serial.println("Schedule deleted successfully");
             server.send(200, "application/json", "{\"status\":\"success\"}");
+            clearError();
             broadcastRelayStates();
             return;
         }
-        // Indicate error if schedule ID is invalid
         indicateError();
     }
     Serial.println("Invalid delete request");
@@ -615,7 +636,6 @@ void handleRoot() {
 void toggleRelay(int relayPin, bool &relayState) {
     if ((relayPin == relay1 && overrideRelay1) || (relayPin == relay2 && overrideRelay2)) {
         Serial.println("Physical override active, ignoring toggle.");
-        indicateError(); // Indicate error when trying to toggle during override
         return;
     }
     relayState = !relayState;
@@ -628,7 +648,6 @@ void handleRelay1() {
     if (server.method() == HTTP_POST) {
         if (overrideRelay1) {
             server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
-            indicateError(); // Indicate error when override is active
             return;
         }
         toggleRelay(relay1, relay1State);
@@ -642,7 +661,6 @@ void handleRelay2() {
     if (server.method() == HTTP_POST) {
         if (overrideRelay2) {
             server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
-            indicateError(); // Indicate error when override is active
             return;
         }
         toggleRelay(relay2, relay2State);
