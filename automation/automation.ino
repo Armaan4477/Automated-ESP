@@ -6,6 +6,7 @@
 #include <vector>
 #include <ArduinoJson.h>
 #include <EEPROM.h>
+#include <string>
 
 struct Schedule {
     int id;
@@ -32,6 +33,7 @@ bool relay4State = false;
 
 const char* ssid = "Free Public Wi-Fi";
 const char* password = "2A0R0M4AAN";
+std::vector<String> logBuffer;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 unsigned long lastTimeUpdate = 0;
@@ -55,12 +57,35 @@ ESP8266WebServer server(80);
 
 WebSocketsServer webSocket = WebSocketsServer(81);
 
+void logMessage(const String &message) {
+    Serial.println(message);
+    logBuffer.push_back(message);
+    if (logBuffer.size() > 100) {
+        logBuffer.erase(logBuffer.begin());
+    }
+}
+
+void handleGetLogs() {
+    StaticJsonDocument<1024> doc;
+    JsonArray array = doc.to<JsonArray>();
+    
+    for (const auto& log : logBuffer) {
+        array.add(log);
+    }
+    
+    String json;
+    serializeJson(doc, json);
+    server.send(200, "application/json", json);
+}
+
 void indicateError() {
+    logMessage("Error triggered.");
     digitalWrite(errorLEDPin, HIGH);
     hasError = true;
 }
 
 void clearError() {
+    logMessage("Error cleared.");
     digitalWrite(errorLEDPin, LOW);
     hasError = false;
 }
@@ -97,7 +122,6 @@ void IRAM_ATTR setup() {
     pinMode(switch1Pin, INPUT_PULLUP);
     pinMode(switch2Pin, INPUT_PULLUP);
     
-    // Initialize the error LED pin
     pinMode(errorLEDPin, OUTPUT);
     digitalWrite(errorLEDPin, LOW);
     
@@ -113,14 +137,14 @@ void IRAM_ATTR setup() {
         delay(500);
         Serial.print(".");
         if (millis() - wifiStartTime > wifiTimeout) {
-            Serial.println("\nWiFi connection failed.");
+            logMessage("WiFi connection failed.");
             indicateError();
             break;
         }
     }
     
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nConnected to WiFi");
+        logMessage("Connected to WiFi");
         Serial.print("IP Address: ");
         Serial.println(WiFi.localIP());
         clearError();
@@ -133,14 +157,15 @@ void IRAM_ATTR setup() {
         epochTime = timeClient.getEpochTime();
         lastNTPSync = millis();
         validTimeSync = true;
-        Serial.println("Time sync successful");
+        logMessage("Time sync successful");
         clearError();
     } else {
-        Serial.println("Time sync failed.");
+        logMessage("Time sync failed.");
         indicateError();
     }
 
     server.on("/", HTTP_GET, handleRoot);
+    server.on("/logs", HTTP_GET, handleGetLogs);
     server.on("/relay/1", HTTP_ANY, handleRelay1);
     server.on("/relay/2", HTTP_ANY, handleRelay2);
     server.on("/time", HTTP_GET, handleTime);
@@ -263,6 +288,14 @@ const char* html = R"html(
             cursor: pointer;
             font-size: 16px;
         }
+        #logSection {
+            margin: 20px;
+            padding: 10px;
+            background-color: #eee;
+            border: 1px solid #ccc;
+            max-height: 300px;
+            overflow-y: scroll;
+        }
         @media screen and (max-width: 600px) {
             body {
                 font-size: 16px; 
@@ -278,6 +311,7 @@ const char* html = R"html(
     <div id="time">Loading time...</div>
     <button class="button" onclick="toggleRelay(1)" id="btn1">Relay 1</button>
     <button class="button" onclick="toggleRelay(2)" id="btn2">Relay 2</button>
+    <button class="button" onclick="showLogs()">Show Logs</button>
     
     <div class="schedule-form">
         <h3>Add Schedule</h3>
@@ -304,6 +338,11 @@ const char* html = R"html(
             <th>Action</th>
         </tr>
     </table>
+
+      <div id="logSection" style="display:none;">
+        <h3>Logs</h3>
+        <pre id="logs"></pre>
+    </div>
 
     <script>
         let relayStates = {
@@ -524,6 +563,21 @@ const char* html = R"html(
             });
         }
 
+        function showLogs() {
+            fetch('/logs')
+                .then(response => response.json())
+                .then(data => {
+                    const logSection = document.getElementById('logSection');
+                    const logs = document.getElementById('logs');
+                    logs.textContent = data.join('\n');
+                    logSection.style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error fetching logs:', error);
+                    alert('Failed to load logs.');
+                });
+        }
+
         setInterval(updateTime, 1000);
         setInterval(checkErrorStatus, 2000);
         updateTime();
@@ -568,10 +622,10 @@ void loop() {
             epochTime = timeClient.getEpochTime();
             lastNTPSync = millis();
             validTimeSync = true;
-            Serial.println("Time sync successful (retry)");
+            logMessage("Time sync successful (retry)");
             clearError();
         } else {
-            Serial.println("Time sync failed (retry).");
+            logMessage("Time sync failed (retry).");
             indicateError();
         }
     }
@@ -614,12 +668,12 @@ void activateRelay(int relayNum, bool manual) {
         case 1: 
             digitalWrite(relay1, LOW); 
             relay1State = true; 
-            Serial.println("Relay 1 activated.");
+            logMessage("Relay 1 activated.");
             break;
         case 2: 
             digitalWrite(relay2, LOW); 
             relay2State = true; 
-            Serial.println("Relay 2 activated.");
+            logMessage("Relay 2 activated.");
             break;
     }
     broadcastRelayStates();
@@ -635,12 +689,12 @@ void deactivateRelay(int relayNum, bool manual) {
         case 1: 
             digitalWrite(relay1, HIGH); 
             relay1State = false; 
-            Serial.println("Relay 1 deactivated.");
+            logMessage("Relay 1 deactivated.");
             break;
         case 2: 
             digitalWrite(relay2, HIGH); 
             relay2State = false; 
-            Serial.println("Relay 2 deactivated.");
+            logMessage("Relay 2 deactivated.");
             break;
     }
     broadcastRelayStates();
@@ -702,12 +756,12 @@ void handleAddSchedule() {
 void handleDeleteSchedule() {
     if (server.hasArg("id")) {
         int id = server.arg("id").toInt();
-        Serial.println("Delete request for schedule ID: " + String(id));
+        logMessage("Delete request for schedule ID: " + String(id));
         
         if (id >= 0 && id < schedules.size()) {
             schedules.erase(schedules.begin() + id);
             saveSchedulesToEEPROM();
-            Serial.println("Schedule deleted successfully");
+            logMessage("Schedule deleted successfully");
             server.send(200, "application/json", "{\"status\":\"success\"}");
             clearError();
             broadcastRelayStates();
@@ -715,7 +769,7 @@ void handleDeleteSchedule() {
         }
         indicateError();
     }
-    Serial.println("Invalid delete request");
+    logMessage("Invalid delete request");
     server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
 }
 
@@ -725,12 +779,12 @@ void handleRoot() {
 
 void toggleRelay(int relayPin, bool &relayState) {
     if ((relayPin == relay1 && overrideRelay1) || (relayPin == relay2 && overrideRelay2)) {
-        Serial.println("Physical override active, ignoring toggle.");
+        logMessage("Physical override active, ignoring toggle.");
         return;
     }
     relayState = !relayState;
     digitalWrite(relayPin, relayState ? LOW : HIGH);
-    Serial.printf("Relay state changed to: %d\n", relayState);
+    logMessage("Relay state changed to: " + String(relayState));
     broadcastRelayStates();
 }
 
