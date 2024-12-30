@@ -18,7 +18,11 @@ struct Schedule {
 
 const int relay1 = 5;  // D1
 const int relay2 = 4;  // D2
+const int switch1Pin = 14; // D5
+const int switch2Pin = 12; // D6
 
+bool overrideRelay1 = false;
+bool overrideRelay2 = false;
 bool relay1State = false;
 bool relay2State = false;
 bool relay3State = false;
@@ -73,6 +77,8 @@ void loadSchedulesFromEEPROM() {
 void IRAM_ATTR setup() {
     pinMode(relay1, OUTPUT);
     pinMode(relay2, OUTPUT);
+    pinMode(switch1Pin, INPUT_PULLUP);
+    pinMode(switch2Pin, INPUT_PULLUP);
     
     digitalWrite(relay1, HIGH);
     digitalWrite(relay2, HIGH);
@@ -352,6 +358,19 @@ const char* html = R"html(
 void loop() {
     server.handleClient();
 
+    if (digitalRead(switch1Pin) == LOW) {
+      overrideRelay1 = true;
+      activateRelay(1);
+    } else {
+      overrideRelay1 = false;
+    }
+    if (digitalRead(switch2Pin) == LOW) {
+      overrideRelay2 = true;
+      activateRelay(2);
+    } else {
+      overrideRelay2 = false;
+    }
+
     if (!validTimeSync) {
         if (timeClient.update()) {
             epochTime = timeClient.getEpochTime();
@@ -469,6 +488,10 @@ void handleRoot() {
 }
 
 void toggleRelay(int relayPin, bool &relayState) {
+    if ((relayPin == relay1 && overrideRelay1) || (relayPin == relay2 && overrideRelay2)) {
+        Serial.println("Physical override active, ignoring toggle.");
+        return;
+      }
     relayState = !relayState;
     digitalWrite(relayPin, relayState ? LOW : HIGH);
     Serial.printf("Relay state changed to: %d\n", relayState);
@@ -506,7 +529,7 @@ void handleTime() {
 
 void handleRelayStatus() {
     String json = "{";
-    json += "\"1\":" + String(relay1State) + ",";
-    json += "\"2\":" + String(relay2State) + "}";
+    json += "\"1\":" + String(relay1State || overrideRelay1) + ","; 
+    json += "\"2\":" + String(relay2State || overrideRelay2) + "}";
     server.send(200, "application/json", json);
 }
