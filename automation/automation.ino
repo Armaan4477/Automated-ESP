@@ -21,6 +21,7 @@ const int relay1 = 5;  // D1
 const int relay2 = 4;  // D2
 const int switch1Pin = 14; // D5
 const int switch2Pin = 12; // D6
+const int errorLEDPin = 13; // D7
 
 bool overrideRelay1 = false;
 bool overrideRelay2 = false;
@@ -50,6 +51,11 @@ const int SCHEDULE_START_ADDR = 0;
 ESP8266WebServer server(80);
 
 WebSocketsServer webSocket = WebSocketsServer(81);
+
+// Function to indicate an error by lighting up the LED
+void indicateError() {
+    digitalWrite(errorLEDPin, HIGH);
+}
 
 void saveSchedulesToEEPROM() {
     int addr = SCHEDULE_START_ADDR;
@@ -82,6 +88,10 @@ void IRAM_ATTR setup() {
     pinMode(relay2, OUTPUT);
     pinMode(switch1Pin, INPUT_PULLUP);
     pinMode(switch2Pin, INPUT_PULLUP);
+    
+    // Initialize the error LED pin
+    pinMode(errorLEDPin, OUTPUT);
+    digitalWrite(errorLEDPin, LOW);
     
     digitalWrite(relay1, HIGH);
     digitalWrite(relay2, HIGH);
@@ -126,6 +136,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
     switch(type) {
         case WStype_DISCONNECTED:
             Serial.printf("WebSocket[%u] Disconnected!\n", num);
+            indicateError(); // Indicate error on WebSocket disconnection
             break;
         case WStype_CONNECTED: {
             IPAddress ip = webSocket.remoteIP(num);
@@ -483,6 +494,7 @@ void checkSchedules() {
 void activateRelay(int relayNum, bool manual) {
     if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
         Serial.printf("Relay %d is overridden. Activation skipped.\n", relayNum);
+        indicateError(); // Indicate error if activation is skipped due to override
         return;
     }
     
@@ -504,6 +516,7 @@ void activateRelay(int relayNum, bool manual) {
 void deactivateRelay(int relayNum, bool manual) {
     if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
         Serial.printf("Relay %d is overridden. Deactivation skipped.\n", relayNum);
+        indicateError(); // Indicate error if deactivation is skipped due to override
         return;
     }
     
@@ -569,6 +582,8 @@ void handleAddSchedule() {
             broadcastRelayStates();
             return;
         }
+        // Indicate error if JSON deserialization fails
+        indicateError();
     }
     server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
 }
@@ -586,6 +601,8 @@ void handleDeleteSchedule() {
             broadcastRelayStates();
             return;
         }
+        // Indicate error if schedule ID is invalid
+        indicateError();
     }
     Serial.println("Invalid delete request");
     server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
@@ -598,6 +615,7 @@ void handleRoot() {
 void toggleRelay(int relayPin, bool &relayState) {
     if ((relayPin == relay1 && overrideRelay1) || (relayPin == relay2 && overrideRelay2)) {
         Serial.println("Physical override active, ignoring toggle.");
+        indicateError(); // Indicate error when trying to toggle during override
         return;
     }
     relayState = !relayState;
@@ -610,6 +628,7 @@ void handleRelay1() {
     if (server.method() == HTTP_POST) {
         if (overrideRelay1) {
             server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
+            indicateError(); // Indicate error when override is active
             return;
         }
         toggleRelay(relay1, relay1State);
@@ -623,6 +642,7 @@ void handleRelay2() {
     if (server.method() == HTTP_POST) {
         if (overrideRelay2) {
             server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
+            indicateError(); // Indicate error when override is active
             return;
         }
         toggleRelay(relay2, relay2State);
