@@ -363,12 +363,21 @@ const char* html = R"html(
 
 void loop() {
     server.handleClient();
+
+    if (!validTimeSync) {
+        if (timeClient.update()) {
+            epochTime = timeClient.getEpochTime();
+            lastNTPSync = millis();
+            validTimeSync = true;
+            Serial.println("Time sync successful (retry)");
+        }
+    }
+
     unsigned long currentMillis = millis();
-    
     if (currentMillis - lastTimeUpdate >= 1000) {
         epochTime++;
         lastTimeUpdate = currentMillis;
-        
+
         if (validTimeSync) {
             checkSchedules();
         }
@@ -475,14 +484,12 @@ void handleRoot() {
   server.send(200, "text/html", html);
 }
 
-// Update the toggleRelay helper function
 void toggleRelay(int relayPin, bool &relayState) {
     relayState = !relayState;
     digitalWrite(relayPin, relayState ? LOW : HIGH);
-    Serial.printf("Relay state changed to: %d\n", relayState); // Debug logging
+    Serial.printf("Relay state changed to: %d\n", relayState);
 }
 
-// Update the handleRelay functions
 void handleRelay1() {
     if (server.method() == HTTP_POST) {
         toggleRelay(relay1, relay1State);
