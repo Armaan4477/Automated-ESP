@@ -41,9 +41,12 @@ unsigned long lastNTPSync = 0;
 unsigned long lastScheduleCheck = 0;
 unsigned long lastSecond = 0;
 bool validTimeSync = false;
+bool hasError = false;
 std::vector<Schedule> schedules;
 void handleAddSchedule();
 void handleDeleteSchedule();
+void handleClearError();
+void handleGetErrorStatus();
 const int EEPROM_SIZE = 512;
 const int SCHEDULE_SIZE = sizeof(Schedule);
 const int MAX_SCHEDULES = 10;
@@ -51,6 +54,42 @@ const int SCHEDULE_START_ADDR = 0;
 ESP8266WebServer server(80);
 
 WebSocketsServer webSocket = WebSocketsServer(81);
+
+void indicateError() {
+    digitalWrite(errorLEDPin, HIGH);
+    hasError = true;
+}
+
+void clearError() {
+    digitalWrite(errorLEDPin, LOW);
+    hasError = false;
+}
+
+void saveSchedulesToEEPROM() {
+    int addr = SCHEDULE_START_ADDR;
+    EEPROM.write(addr, schedules.size());
+    addr++;
+    
+    for(const Schedule& schedule : schedules) {
+        EEPROM.put(addr, schedule);
+        addr += SCHEDULE_SIZE;
+    }
+    EEPROM.commit();
+}
+
+void loadSchedulesFromEEPROM() {
+    schedules.clear();
+    int addr = SCHEDULE_START_ADDR;
+    int count = EEPROM.read(addr);
+    addr++;
+    
+    for(int i = 0; i < count && i < MAX_SCHEDULES; i++) {
+        Schedule schedule;
+        EEPROM.get(addr, schedule);
+        schedules.push_back(schedule);
+        addr += SCHEDULE_SIZE;
+    }
+}
 
 void IRAM_ATTR setup() {
     pinMode(relay1, OUTPUT);
@@ -109,6 +148,8 @@ void IRAM_ATTR setup() {
     server.on("/schedule/add", HTTP_POST, handleAddSchedule);
     server.on("/schedule/delete", HTTP_DELETE, handleDeleteSchedule);
     server.on("/relay/status", HTTP_GET, handleRelayStatus);
+    server.on("/error/clear", HTTP_POST, handleClearError);
+    server.on("/error/status", HTTP_GET, handleGetErrorStatus);
     server.begin();
     EEPROM.begin(EEPROM_SIZE);
     loadSchedulesFromEEPROM();
@@ -117,45 +158,10 @@ void IRAM_ATTR setup() {
     webSocket.onEvent(webSocketEvent);
 }
 
-void indicateError() {
-    digitalWrite(errorLEDPin, HIGH);
-}
-
-void clearError() {
-    digitalWrite(errorLEDPin, LOW);
-}
-
-void saveSchedulesToEEPROM() {
-    int addr = SCHEDULE_START_ADDR;
-    EEPROM.write(addr, schedules.size());
-    addr++;
-    
-    for(const Schedule& schedule : schedules) {
-        EEPROM.put(addr, schedule);
-        addr += SCHEDULE_SIZE;
-    }
-    EEPROM.commit();
-}
-
-void loadSchedulesFromEEPROM() {
-    schedules.clear();
-    int addr = SCHEDULE_START_ADDR;
-    int count = EEPROM.read(addr);
-    addr++;
-    
-    for(int i = 0; i < count && i < MAX_SCHEDULES; i++) {
-        Schedule schedule;
-        EEPROM.get(addr, schedule);
-        schedules.push_back(schedule);
-        addr += SCHEDULE_SIZE;
-    }
-}
-
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
     switch(type) {
         case WStype_DISCONNECTED:
             Serial.printf("WebSocket[%u] Disconnected!\n", num);
-            indicateError();
             break;
         case WStype_CONNECTED: {
             IPAddress ip = webSocket.remoteIP(num);
@@ -242,6 +248,21 @@ const char* html = R"html(
             border: 1px solid #ddd;
             padding: 8px;
         }
+        #errorSection {
+            text-align: center;
+            margin: 20px;
+            color: red;
+            display: none;
+        }
+        #clearErrorBtn {
+            padding: 10px 20px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
         @media screen and (max-width: 600px) {
             body {
                 font-size: 16px; 
@@ -267,6 +288,11 @@ const char* html = R"html(
         <input type="time" id="onTime">
         <input type="time" id="offTime">
         <button onclick="addSchedule()">Add Schedule</button>
+    </div>
+
+    <div id="errorSection">
+        <p>Error detected!</p>
+        <button id="clearErrorBtn" onclick="clearError()">Clear Error</button>
     </div>
 
     <table class="schedule-table" id="scheduleTable">
@@ -310,10 +336,12 @@ const char* html = R"html(
 
         socket.onclose = function() {
             console.log('WebSocket connection closed');
+            checkErrorStatus();
         };
 
         socket.onerror = function(error) {
             console.error('WebSocket error:', error);
+            checkErrorStatus();
         };
 
         function updateTime() {
@@ -348,6 +376,7 @@ const char* html = R"html(
             .catch(error => {
                 console.error('Error:', error);
                 alert(error.message);
+                checkErrorStatus();
             });
         }
 
@@ -366,7 +395,19 @@ const char* html = R"html(
                     onTime: onTime,
                     offTime: offTime
                 })
-            }).then(() => loadSchedules());
+            }).then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to add schedule');
+                }
+                return response.json();
+            }).then(data => {
+                loadSchedules();
+                checkErrorStatus();
+            }).catch(error => {
+                console.error('Error:', error);
+                alert('Failed to add schedule: ' + error.message);
+                checkErrorStatus();
+            });
         }
 
         function deleteSchedule(id) {
@@ -385,6 +426,7 @@ const char* html = R"html(
           .then(data => {
               if (data.status === 'success') {
                   loadSchedules();
+                  checkErrorStatus();
               } else {
                   throw new Error('Server returned error');
               }
@@ -392,54 +434,102 @@ const char* html = R"html(
           .catch(error => {
               console.error('Error:', error);
               alert('Failed to delete schedule: ' + error.message);
+              checkErrorStatus();
           });
       }
 
-      function loadSchedules() {
-          fetch('/schedules')
-              .then(response => response.json())
-              .then(schedules => {
-                  const table = document.getElementById('scheduleTable');
-                  while (table.rows.length > 1) {
-                      table.deleteRow(1);
-                  }
-                  
-                  schedules.forEach((schedule, index) => {
-                      const row = table.insertRow();
-                      row.insertCell(0).textContent = `Relay ${schedule.relay}`;
-                      row.insertCell(1).textContent = `${schedule.onHour}:${schedule.onMinute}`;
-                      row.insertCell(2).textContent = `${schedule.offHour}:${schedule.offMinute}`;
-                      row.insertCell(3).textContent = schedule.enabled ? 'Active' : 'Inactive';
-                      const deleteBtn = document.createElement('button');
-                      deleteBtn.textContent = 'Delete';
-                      deleteBtn.onclick = () => deleteSchedule(index);
-                      row.insertCell(4).appendChild(deleteBtn);
-                  });
-              });
-      }
-      function updateButtonStyle(relay) {
-          const btn = document.getElementById('btn' + relay);
-          if (btn) {
-              btn.className = 'button ' + (relayStates[relay] ? 'on' : 'off');
-              btn.textContent = 'Relay ' + relay + (relayStates[relay] ? ' (ON)' : ' (OFF)');
-          }
-      }
+        function loadSchedules() {
+            fetch('/schedules')
+                .then(response => response.json())
+                .then(schedules => {
+                    const table = document.getElementById('scheduleTable');
+                    while (table.rows.length > 1) {
+                        table.deleteRow(1);
+                    }
+                    
+                    schedules.forEach((schedule, index) => {
+                        const row = table.insertRow();
+                        row.insertCell(0).textContent = `Relay ${schedule.relay}`;
+                        row.insertCell(1).textContent = `${schedule.onHour}:${schedule.onMinute}`;
+                        row.insertCell(2).textContent = `${schedule.offHour}:${schedule.offMinute}`;
+                        row.insertCell(3).textContent = schedule.enabled ? 'Active' : 'Inactive';
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.textContent = 'Delete';
+                        deleteBtn.onclick = () => deleteSchedule(index);
+                        row.insertCell(4).appendChild(deleteBtn);
+                    });
+                }).catch(error => {
+                    console.error('Error loading schedules:', error);
+                    checkErrorStatus();
+                });
+        }
+        function updateButtonStyle(relay) {
+            const btn = document.getElementById('btn' + relay);
+            if (btn) {
+                btn.className = 'button ' + (relayStates[relay] ? 'on' : 'off');
+                btn.textContent = 'Relay ' + relay + (relayStates[relay] ? ' (ON)' : ' (OFF)');
+            }
+        }
 
-      function getInitialStates() {
-          fetch('/relay/status')
-              .then(response => response.json())
-              .then(data => {
-                  relayStates = data;
-                  for(let relay = 1; relay <= 4; relay++) {
-                      updateButtonStyle(relay);
-                  }
-              });
-      }
+        function getInitialStates() {
+            fetch('/relay/status')
+                .then(response => response.json())
+                .then(data => {
+                    relayStates = data;
+                    for(let relay = 1; relay <= 4; relay++) {
+                        updateButtonStyle(relay);
+                    }
+                }).catch(error => {
+                    console.error('Error getting relay status:', error);
+                    checkErrorStatus();
+                });
+        }
 
-      setInterval(updateTime, 1000);
-      updateTime();
-      loadSchedules();
-      getInitialStates();
+        function checkErrorStatus() {
+            fetch('/error/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.hasError) {
+                        document.getElementById('errorSection').style.display = 'block';
+                    } else {
+                        document.getElementById('errorSection').style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking error status:', error);
+                    document.getElementById('errorSection').style.display = 'block';
+                });
+        }
+
+        function clearError() {
+            fetch('/error/clear', {
+                method: 'POST'
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to clear error');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status === 'success') {
+                    document.getElementById('errorSection').style.display = 'none';
+                } else {
+                    throw new Error('Server returned error');
+                }
+            })
+            .catch(error => {
+                console.error('Error clearing error:', error);
+                alert('Failed to clear error: ' + error.message);
+            });
+        }
+
+        setInterval(updateTime, 1000);
+        setInterval(checkErrorStatus, 2000);
+        updateTime();
+        loadSchedules();
+        getInitialStates();
+        checkErrorStatus();
     </script>
 </body>
 </html>
@@ -686,5 +776,15 @@ void handleRelayStatus() {
     String json = "{";
     json += "\"1\":" + String(relay1State || overrideRelay1) + ","; 
     json += "\"2\":" + String(relay2State || overrideRelay2) + "}";
+    server.send(200, "application/json", json);
+}
+
+void handleClearError() {
+    clearError();
+    server.send(200, "application/json", "{\"status\":\"success\"}");
+}
+
+void handleGetErrorStatus() {
+    String json = "{\"hasError\":" + String(hasError ? "true" : "false") + "}";
     server.send(200, "application/json", json);
 }
