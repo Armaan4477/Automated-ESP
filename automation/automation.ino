@@ -359,16 +359,27 @@ void loop() {
     server.handleClient();
 
     if (digitalRead(switch1Pin) == LOW) {
-      overrideRelay1 = true;
-      activateRelay(1);
+        if (!overrideRelay1) {
+            overrideRelay1 = true;
+            activateRelay(1);
+        }
     } else {
-      overrideRelay1 = false;
+        if (overrideRelay1) {
+            overrideRelay1 = false;
+            deactivateRelay(1);
+        }
     }
+
     if (digitalRead(switch2Pin) == LOW) {
-      overrideRelay2 = true;
-      activateRelay(2);
+        if (!overrideRelay2) {
+            overrideRelay2 = true;
+            activateRelay(2);
+        }
     } else {
-      overrideRelay2 = false;
+        if (overrideRelay2) {
+            overrideRelay2 = false;
+            deactivateRelay(2);
+        }
     }
 
     if (!validTimeSync) {
