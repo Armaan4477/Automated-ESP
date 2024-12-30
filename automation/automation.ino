@@ -18,8 +18,6 @@ struct Schedule {
 
 const int relay1 = 5;  // D1
 const int relay2 = 4;  // D2
-const int relay3 = 14; // D5
-const int relay4 = 12; // D6
 
 bool relay1State = false;
 bool relay2State = false;
@@ -75,13 +73,9 @@ void loadSchedulesFromEEPROM() {
 void IRAM_ATTR setup() {
     pinMode(relay1, OUTPUT);
     pinMode(relay2, OUTPUT);
-    pinMode(relay3, OUTPUT);
-    pinMode(relay4, OUTPUT);
     
     digitalWrite(relay1, HIGH);
     digitalWrite(relay2, HIGH);
-    digitalWrite(relay3, HIGH);
-    digitalWrite(relay4, HIGH);
     
     Serial.begin(115200);
     WiFi.begin(ssid, password);
@@ -91,6 +85,8 @@ void IRAM_ATTR setup() {
     }
     
     Serial.println("\nConnected to WiFi");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
     timeClient.begin();
     timeClient.setTimeOffset(19800);
     
@@ -104,8 +100,6 @@ void IRAM_ATTR setup() {
     server.on("/", HTTP_GET, handleRoot);
     server.on("/relay/1", HTTP_ANY, handleRelay1);
     server.on("/relay/2", HTTP_ANY, handleRelay2);
-    server.on("/relay/3", HTTP_ANY, handleRelay3);
-    server.on("/relay/4", HTTP_ANY, handleRelay4);
     server.on("/time", HTTP_GET, handleTime);
     server.on("/schedules", HTTP_GET, handleGetSchedules);
     server.on("/schedule/add", HTTP_POST, handleAddSchedule);
@@ -201,16 +195,12 @@ const char* html = R"html(
     <div id="time">Loading time...</div>
     <button class="button" onclick="toggleRelay(1)" id="btn1">Relay 1</button>
     <button class="button" onclick="toggleRelay(2)" id="btn2">Relay 2</button>
-    <button class="button" onclick="toggleRelay(3)" id="btn3">Relay 3</button>
-    <button class="button" onclick="toggleRelay(4)" id="btn4">Relay 4</button>
     
     <div class="schedule-form">
         <h3>Add Schedule</h3>
         <select id="relaySelect">
             <option value="1">Relay 1</option>
             <option value="2">Relay 2</option>
-            <option value="3">Relay 3</option>
-            <option value="4">Relay 4</option>
         </select>
         <input type="time" id="onTime">
         <input type="time" id="offTime">
@@ -230,9 +220,7 @@ const char* html = R"html(
     <script>
         let relayStates = {
             1: false,
-            2: false,
-            3: false,
-            4: false
+            2: false
         };
         function updateTime() {
             fetch('/time')
@@ -405,8 +393,6 @@ void activateRelay(int relayNum) {
     switch(relayNum) {
         case 1: digitalWrite(relay1, LOW); relay1State = true; break;
         case 2: digitalWrite(relay2, LOW); relay2State = true; break;
-        case 3: digitalWrite(relay3, LOW); relay3State = true; break;
-        case 4: digitalWrite(relay4, LOW); relay4State = true; break;
     }
 }
 
@@ -414,8 +400,6 @@ void deactivateRelay(int relayNum) {
     switch(relayNum) {
         case 1: digitalWrite(relay1, HIGH); relay1State = false; break;
         case 2: digitalWrite(relay2, HIGH); relay2State = false; break;
-        case 3: digitalWrite(relay3, HIGH); relay3State = false; break;
-        case 4: digitalWrite(relay4, HIGH); relay4State = false; break;
     }
 }
 
@@ -508,24 +492,6 @@ void handleRelay2() {
     }
 }
 
-void handleRelay3() {
-    if (server.method() == HTTP_POST) {
-        toggleRelay(relay3, relay3State);
-        server.send(200, "application/json", "{\"state\":" + String(relay3State) + "}");
-    } else if (server.method() == HTTP_GET) {
-        server.send(200, "application/json", "{\"state\":" + String(relay3State) + "}");
-    }
-}
-
-void handleRelay4() {
-    if (server.method() == HTTP_POST) {
-        toggleRelay(relay4, relay4State);
-        server.send(200, "application/json", "{\"state\":" + String(relay4State) + "}");
-    } else if (server.method() == HTTP_GET) {
-        server.send(200, "application/json", "{\"state\":" + String(relay4State) + "}");
-    }
-}
-
 void handleTime() {
   unsigned long hours = ((epochTime % 86400L) / 3600);
   unsigned long minutes = ((epochTime % 3600) / 60);
@@ -541,8 +507,6 @@ void handleTime() {
 void handleRelayStatus() {
     String json = "{";
     json += "\"1\":" + String(relay1State) + ",";
-    json += "\"2\":" + String(relay2State) + ",";
-    json += "\"3\":" + String(relay3State) + ",";
-    json += "\"4\":" + String(relay4State) + "}";
+    json += "\"2\":" + String(relay2State) + "}";
     server.send(200, "application/json", json);
 }
