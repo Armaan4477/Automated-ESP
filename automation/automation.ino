@@ -245,18 +245,21 @@ const char* html = R"html(
             })
             .then(response => {
                 if (!response.ok) {
+                    if (response.status === 403) {
+                        return response.json().then(data => { throw new Error(data.error); });
+                    }
                     throw new Error('Network response was not ok');
                 }
                 return response.json();
             })
             .then(data => {
-                console.log('Relay ' + relay + ' state:', data.state); // Debug logging
+                console.log('Relay ' + relay + ' state:', data.state);
                 relayStates[relay] = data.state;
                 updateButtonStyle(relay);
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Failed to toggle relay ' + relay);
+                alert(error.message);
             });
         }
         function addSchedule() {
@@ -510,6 +513,10 @@ void toggleRelay(int relayPin, bool &relayState) {
 
 void handleRelay1() {
     if (server.method() == HTTP_POST) {
+        if (overrideRelay1) {
+            server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
+            return;
+        }
         toggleRelay(relay1, relay1State);
         server.send(200, "application/json", "{\"state\":" + String(relay1State) + "}");
     } else if (server.method() == HTTP_GET) {
@@ -519,6 +526,10 @@ void handleRelay1() {
 
 void handleRelay2() {
     if (server.method() == HTTP_POST) {
+        if (overrideRelay2) {
+            server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
+            return;
+        }
         toggleRelay(relay2, relay2State);
         server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
     } else if (server.method() == HTTP_GET) {
