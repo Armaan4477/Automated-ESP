@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 #include <EEPROM.h>
 #include <string>
+#include <Ticker.h>
 
 struct Schedule {
     int id;
@@ -36,6 +37,9 @@ const char* password = "2A0R0M4AAN";
 std::vector<String> logBuffer;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
+Ticker watchdogTicker;
+unsigned long lastLoopTime = 0;
+const unsigned long watchdogTimeout = 5000;
 unsigned long lastTimeUpdate = 0;
 const long timeUpdateInterval = 1000;
 unsigned long epochTime = 0;
@@ -76,6 +80,16 @@ void handleGetLogs() {
     String json;
     serializeJson(doc, json);
     server.send(200, "application/json", json);
+}
+
+void resetWatchdog() {
+    lastLoopTime = millis();
+}
+
+void checkWatchdog() {
+    if (millis() - lastLoopTime > watchdogTimeout) {
+        ESP.restart();
+    }
 }
 
 void indicateError() {
@@ -181,6 +195,9 @@ void IRAM_ATTR setup() {
 
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
+
+    resetWatchdog();
+    watchdogTicker.attach(1, checkWatchdog);
 }
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
@@ -592,6 +609,7 @@ const char* html = R"html(
 void loop() {
     server.handleClient();
     webSocket.loop();
+    resetWatchdog();
 
     if (digitalRead(switch1Pin) == LOW) {
         if (!overrideRelay1) {
@@ -639,6 +657,8 @@ void loop() {
             checkSchedules();
         }
     }
+    
+    yield();
 }
 
 void checkSchedules() {
