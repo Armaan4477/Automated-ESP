@@ -1,5 +1,6 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
+#include <WebSocketsServer.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include <vector>
@@ -47,6 +48,8 @@ const int SCHEDULE_SIZE = sizeof(Schedule);
 const int MAX_SCHEDULES = 10;
 const int SCHEDULE_START_ADDR = 0;
 ESP8266WebServer server(80);
+
+WebSocketsServer webSocket = WebSocketsServer(81);
 
 void saveSchedulesToEEPROM() {
     int addr = SCHEDULE_START_ADDR;
@@ -114,6 +117,29 @@ void IRAM_ATTR setup() {
     server.begin();
     EEPROM.begin(EEPROM_SIZE);
     loadSchedulesFromEEPROM();
+
+    webSocket.begin();
+    webSocket.onEvent(webSocketEvent);
+}
+
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+    switch(type) {
+        case WStype_DISCONNECTED:
+            Serial.printf("WebSocket[%u] Disconnected!\n", num);
+            break;
+        case WStype_CONNECTED: {
+            IPAddress ip = webSocket.remoteIP(num);
+            Serial.printf("WebSocket[%u] Connected from %d.%d.%d.%d url: %s\n", 
+                          num, ip[0], ip[1], ip[2], ip[3], payload);
+            
+            String message = "{\"relay1\":" + String(relay1State || overrideRelay1) +
+                             ",\"relay2\":" + String(relay2State || overrideRelay2) + "}";
+            webSocket.sendTXT(num, message);
+            }
+            break;
+        default:
+            break;
+    }
 }
 
 const char* html = R"html(
@@ -228,6 +254,38 @@ const char* html = R"html(
             1: false,
             2: false
         };
+
+        // Establish WebSocket connection
+        let socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+
+        socket.onopen = function() {
+            console.log('WebSocket connection established');
+        };
+
+        socket.onmessage = function(event) {
+            try {
+                let data = JSON.parse(event.data);
+                if (data.relay1 !== undefined) {
+                    relayStates[1] = data.relay1;
+                    updateButtonStyle(1);
+                }
+                if (data.relay2 !== undefined) {
+                    relayStates[2] = data.relay2;
+                    updateButtonStyle(2);
+                }
+            } catch (e) {
+                console.error('Error parsing WebSocket message:', e);
+            }
+        };
+
+        socket.onclose = function() {
+            console.log('WebSocket connection closed');
+        };
+
+        socket.onerror = function(error) {
+            console.error('WebSocket error:', error);
+        };
+
         function updateTime() {
             fetch('/time')
                 .then(response => response.text())
@@ -262,6 +320,7 @@ const char* html = R"html(
                 alert(error.message);
             });
         }
+
         function addSchedule() {
             const relay = document.getElementById('relaySelect').value;
             const onTime = document.getElementById('onTime').value;
@@ -347,12 +406,10 @@ const char* html = R"html(
               });
       }
 
-        
-
-        setInterval(updateTime, 1000);
-        updateTime();
-        loadSchedules();
-        getInitialStates();
+      setInterval(updateTime, 1000);
+      updateTime();
+      loadSchedules();
+      getInitialStates();
     </script>
 </body>
 </html>
@@ -360,6 +417,7 @@ const char* html = R"html(
 
 void loop() {
     server.handleClient();
+    webSocket.loop();
 
     if (digitalRead(switch1Pin) == LOW) {
         if (!overrideRelay1) {
@@ -427,6 +485,7 @@ void activateRelay(int relayNum) {
         case 1: digitalWrite(relay1, LOW); relay1State = true; break;
         case 2: digitalWrite(relay2, LOW); relay2State = true; break;
     }
+    broadcastRelayStates();
 }
 
 void deactivateRelay(int relayNum) {
@@ -434,6 +493,13 @@ void deactivateRelay(int relayNum) {
         case 1: digitalWrite(relay1, HIGH); relay1State = false; break;
         case 2: digitalWrite(relay2, HIGH); relay2State = false; break;
     }
+    broadcastRelayStates();
+}
+
+void broadcastRelayStates() {
+    String message = "{\"relay1\":" + String(relay1State || overrideRelay1) +
+                     ",\"relay2\":" + String(relay2State || overrideRelay2) + "}";
+    webSocket.broadcastTXT(message);
 }
 
 void handleGetSchedules() {
@@ -474,6 +540,7 @@ void handleAddSchedule() {
             schedules.push_back(newSchedule);
             saveSchedulesToEEPROM(); 
             server.send(200, "application/json", "{\"status\":\"success\"}");
+            broadcastRelayStates();
             return;
         }
     }
@@ -490,6 +557,7 @@ void handleDeleteSchedule() {
             saveSchedulesToEEPROM();
             Serial.println("Schedule deleted successfully");
             server.send(200, "application/json", "{\"status\":\"success\"}");
+            broadcastRelayStates();
             return;
         }
     }
@@ -498,7 +566,7 @@ void handleDeleteSchedule() {
 }
 
 void handleRoot() {
-  server.send(200, "text/html", html);
+    server.send(200, "text/html", html);
 }
 
 void toggleRelay(int relayPin, bool &relayState) {
@@ -509,6 +577,7 @@ void toggleRelay(int relayPin, bool &relayState) {
     relayState = !relayState;
     digitalWrite(relayPin, relayState ? LOW : HIGH);
     Serial.printf("Relay state changed to: %d\n", relayState);
+    broadcastRelayStates();
 }
 
 void handleRelay1() {
