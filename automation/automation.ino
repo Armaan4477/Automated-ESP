@@ -422,24 +422,24 @@ void loop() {
     if (digitalRead(switch1Pin) == LOW) {
         if (!overrideRelay1) {
             overrideRelay1 = true;
-            activateRelay(1);
+            activateRelay(1, true);
         }
     } else {
         if (overrideRelay1) {
             overrideRelay1 = false;
-            deactivateRelay(1);
+            deactivateRelay(1, true);
         }
     }
 
     if (digitalRead(switch2Pin) == LOW) {
         if (!overrideRelay2) {
             overrideRelay2 = true;
-            activateRelay(2);
+            activateRelay(2, true);
         }
     } else {
         if (overrideRelay2) {
             overrideRelay2 = false;
-            deactivateRelay(2);
+            deactivateRelay(2, true);
         }
     }
 
@@ -472,26 +472,52 @@ void checkSchedules() {
         if (!schedule.enabled) continue;
         
         if (hours == schedule.onHour && minutes == schedule.onMinute && seconds == 0) {
-            activateRelay(schedule.relayNumber);
+            activateRelay(schedule.relayNumber, false);
         }
         else if (hours == schedule.offHour && minutes == schedule.offMinute && seconds == 0) {
-            deactivateRelay(schedule.relayNumber);
+            deactivateRelay(schedule.relayNumber, false);
         }
     }
 }
 
-void activateRelay(int relayNum) {
+void activateRelay(int relayNum, bool manual) {
+    if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
+        Serial.printf("Relay %d is overridden. Activation skipped.\n", relayNum);
+        return;
+    }
+    
     switch(relayNum) {
-        case 1: digitalWrite(relay1, LOW); relay1State = true; break;
-        case 2: digitalWrite(relay2, LOW); relay2State = true; break;
+        case 1: 
+            digitalWrite(relay1, LOW); 
+            relay1State = true; 
+            Serial.println("Relay 1 activated.");
+            break;
+        case 2: 
+            digitalWrite(relay2, LOW); 
+            relay2State = true; 
+            Serial.println("Relay 2 activated.");
+            break;
     }
     broadcastRelayStates();
 }
 
-void deactivateRelay(int relayNum) {
+void deactivateRelay(int relayNum, bool manual) {
+    if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
+        Serial.printf("Relay %d is overridden. Deactivation skipped.\n", relayNum);
+        return;
+    }
+    
     switch(relayNum) {
-        case 1: digitalWrite(relay1, HIGH); relay1State = false; break;
-        case 2: digitalWrite(relay2, HIGH); relay2State = false; break;
+        case 1: 
+            digitalWrite(relay1, HIGH); 
+            relay1State = false; 
+            Serial.println("Relay 1 deactivated.");
+            break;
+        case 2: 
+            digitalWrite(relay2, HIGH); 
+            relay2State = false; 
+            Serial.println("Relay 2 deactivated.");
+            break;
     }
     broadcastRelayStates();
 }
@@ -573,7 +599,7 @@ void toggleRelay(int relayPin, bool &relayState) {
     if ((relayPin == relay1 && overrideRelay1) || (relayPin == relay2 && overrideRelay2)) {
         Serial.println("Physical override active, ignoring toggle.");
         return;
-      }
+    }
     relayState = !relayState;
     digitalWrite(relayPin, relayState ? LOW : HIGH);
     Serial.printf("Relay state changed to: %d\n", relayState);
