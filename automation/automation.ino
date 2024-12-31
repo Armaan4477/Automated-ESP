@@ -739,6 +739,10 @@ void setup() {
         epochTime = timeClient.getEpochTime();
         setTime(epochTime);
         
+        currentDay = day();
+        currentMonth = month();
+        currentyear = year();
+        
         lastNTPSync = millis();
         validTimeSync = true;
         validDateSync = true;
@@ -839,6 +843,11 @@ const char* html = R"html(
         #time {
             font-size: 2em;
             margin: 20px 0;
+            text-align: center;
+        }
+        #day {
+            font-size: 1.5em;
+            margin: 10px 0;
             text-align: center;
         }
         #date {
@@ -1040,6 +1049,7 @@ const char* html = R"html(
     </header>
     <div class="container">
         <div id="time">Loading time...</div>
+        <div id="day">Loading day...</div>
         <div id="date">Loading date...</div>
         <div class="buttons">
             <button class="button" onclick="toggleRelay(1)" id="btn1">Relay 1</button>
@@ -1119,12 +1129,14 @@ const char* html = R"html(
             fetch('/time')
                 .then(response => response.text())
                 .then(data => {
-                    const [time, date] = data.split(' ');
+                    const [time, day, date] = data.split(' ');
                     document.getElementById('time').textContent = time;
+                    document.getElementById('day').textContent = day;
                     document.getElementById('date').textContent = date;
                 })
                 .catch(() => {
                     document.getElementById('time').textContent = "Time unavailable";
+                    document.getElementById('day').textContent = "Day unavailable";
                     document.getElementById('date').textContent = "Date unavailable";
                 });
         }
@@ -1368,6 +1380,12 @@ void loop() {
 
         if (validTimeSync) {
             checkSchedules();
+            
+            int newDay = day();
+            if (newDay != currentDay) {
+                logMessage("Day changed to: " + String(newDay));
+                currentDay = newDay;
+            }
         }
     }
 
@@ -1657,20 +1675,21 @@ void handleRelay2() {
 void handleTime() {
     unsigned long currentEpoch = epochTime;
 
-    // Set the current time
     setTime(currentEpoch);
 
-    // Get date components
     int currentYearVal = year();
     int currentMonthVal = month();
     int currentDayVal = day();
+    
+    int currentWeekday = weekday();
+    const char* daysOfWeek[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+    String currentDayName = daysOfWeek[currentWeekday - 1];
 
     String formattedTime = String(hour()) + ":" + 
                            (minute() < 10 ? "0" : "") + String(minute()) + ":" + 
                            (second() < 10 ? "0" : "") + String(second());
     String formattedDate = String(currentDayVal) + "/" + String(currentMonthVal) + "/" + String(currentYearVal);
-
-    String response = formattedTime + " " + formattedDate;
+    String response = formattedTime + " " + currentDayName + " " + formattedDate;
     server.send(200, "text/plain", response);
 }
 
