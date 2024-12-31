@@ -415,6 +415,10 @@ const char* html = R"html(
             margin-bottom: 15px;
             font-size: 0.9em;
         }
+        .ready {
+            background-color: #4CAF50;
+            cursor: pointer;
+        }
         @media (max-width: 600px) {
             .buttons {
                 flex-direction: column;
@@ -457,7 +461,7 @@ const char* html = R"html(
             <input type="time" id="offTime" placeholder="Off Time">
             <div id="offTimeError" class="error">Please enter an end time.</div>
 
-            <button onclick="addSchedule()">Add Schedule</button>
+            <button id="addScheduleBtn" onclick="addSchedule()">Add Schedule</button>
         </div>
         <div id="errorSection">
             <p>Error detected!</p>
@@ -521,7 +525,6 @@ const char* html = R"html(
         }
 
         function addSchedule() {
-            // Reset error messages
             document.getElementById('relayError').style.display = 'none';
             document.getElementById('onTimeError').style.display = 'none';
             document.getElementById('offTimeError').style.display = 'none';
@@ -611,6 +614,24 @@ const char* html = R"html(
             .then(() => { loadSchedules(); checkErrorStatus(); })
             .catch(error => { alert('Failed to update schedule: ' + error.message); checkErrorStatus(); });
         }
+
+        function checkFields() {
+            const relay = document.getElementById('relaySelect').value;
+            const onTime = document.getElementById('onTime').value;
+            const offTime = document.getElementById('offTime').value;
+            const addBtn = document.getElementById('addScheduleBtn');
+
+            if (relay && onTime && offTime) {
+                addBtn.classList.add('ready');
+            } else {
+                addBtn.classList.remove('ready');
+            }
+        }
+
+        // Add event listeners to input fields
+        document.getElementById('relaySelect').addEventListener('change', checkFields);
+        document.getElementById('onTime').addEventListener('input', checkFields);
+        document.getElementById('offTime').addEventListener('input', checkFields);
 
         function updateButtonStyle(relay) {
             const btn = document.getElementById('btn' + relay);
