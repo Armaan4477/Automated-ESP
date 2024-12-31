@@ -477,7 +477,7 @@ const char* html = R"html(
                 })
             }).then(response => {
                 if (!response.ok) {
-                    throw new Error('Failed to add schedule');
+                    return response.json().then(data => { throw new Error(data.error); });
                 }
                 return response.json();
             }).then(data => {
