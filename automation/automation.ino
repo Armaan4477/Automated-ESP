@@ -354,6 +354,31 @@ const char* html = R"html(
         .schedule-table th {
             background-color: #f2f2f2;
         }
+        .action-button {
+            width: 100px;
+            padding: 8px 0;
+            margin: 5px;
+            background-color: #008CBA;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background-color 0.3s;
+            box-sizing: border-box;
+        }
+        .action-button.activate {
+            background-color: #4CAF50;
+        }
+        .action-button.deactivate {
+            background-color: #f44336;
+        }
+        .action-button.delete {
+            background-color: #d32f2f;
+        }
+        .action-button:hover {
+            opacity: 0.9;
+        }
         #errorSection {
             text-align: center;
             margin: 20px 0;
@@ -389,6 +414,9 @@ const char* html = R"html(
             }
             .button {
                 flex: 1 1 100%;
+            }
+            .action-button {
+                width: 100%;
             }
         }
     </style>
@@ -525,11 +553,12 @@ const char* html = R"html(
                         const actionCell = row.insertCell(4);
                         const toggleBtn = document.createElement('button');
                         toggleBtn.textContent = schedule.enabled ? 'Deactivate' : 'Activate';
+                        toggleBtn.className = 'action-button ' + (schedule.enabled ? 'deactivate' : 'activate');
                         toggleBtn.onclick = () => toggleSchedule(index, !schedule.enabled);
-                        toggleBtn.style.marginRight = '10px';
                         
                         const deleteBtn = document.createElement('button');
                         deleteBtn.textContent = 'Delete';
+                        deleteBtn.className = 'action-button delete';
                         deleteBtn.onclick = () => deleteSchedule(index);
                         
                         actionCell.appendChild(toggleBtn);
