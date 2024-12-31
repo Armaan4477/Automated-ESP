@@ -711,7 +711,7 @@ void checkSchedules() {
 void checkScheduleslaunch() {
     unsigned long hours = ((epochTime % 86400L) / 3600);
     unsigned long minutes = ((epochTime % 3600) / 60);
-    unsigned long currentTime = hours * 60 + minutes; // total minutes in the day
+    unsigned long currentTime = hours * 60 + minutes;
     unsigned long seconds = (epochTime % 60);
 
     for (Schedule& schedule : schedules) {
@@ -719,7 +719,6 @@ void checkScheduleslaunch() {
         unsigned long onMinutes = schedule.onHour * 60 + schedule.onMinute;
         unsigned long offMinutes = schedule.offHour * 60 + schedule.offMinute;
 
-        // Trigger exact minute transitions
         if (hours == schedule.onHour && minutes == schedule.onMinute && seconds == 0) {
             activateRelay(schedule.relayNumber, false);
         }
@@ -727,16 +726,13 @@ void checkScheduleslaunch() {
             deactivateRelay(schedule.relayNumber, false);
         }
 
-        // Catch-up if time has already passed the on time
         if (offMinutes > onMinutes) {
-            // Normal: onTime < offTime
             if (currentTime >= onMinutes && currentTime < offMinutes) {
                 activateRelay(schedule.relayNumber, false);
             } else {
                 deactivateRelay(schedule.relayNumber, false);
             }
         } else {
-            // Wraps midnight: off < on
             if (currentTime >= onMinutes || currentTime < offMinutes) {
                 activateRelay(schedule.relayNumber, false);
             } else {
@@ -813,7 +809,7 @@ void handleGetSchedules() {
 void handleAddSchedule() {
     if (server.hasArg("plain")) {
         String body = server.arg("plain");
-        StaticJsonDocument<200> doc;
+        StaticJsonDocument<300> doc;
         DeserializationError error = deserializeJson(doc, body);
         
         if (!error) {
@@ -828,6 +824,30 @@ void handleAddSchedule() {
             newSchedule.offHour = offTime.substring(0, 2).toInt();
             newSchedule.offMinute = offTime.substring(3).toInt();
             newSchedule.enabled = true;
+            
+            bool conflict = false;
+            for (const Schedule& existing : schedules) {
+                if (existing.relayNumber == newSchedule.relayNumber && existing.enabled) {
+                    int existingStart = existing.onHour * 60 + existing.onMinute;
+                    int existingEnd = existing.offHour * 60 + existing.offMinute;
+                    int newStart = newSchedule.onHour * 60 + newSchedule.onMinute;
+                    int newEnd = newSchedule.offHour * 60 + newSchedule.offMinute;
+                    
+                    if (existingEnd <= existingStart) existingEnd += 1440;
+                    if (newEnd <= newStart) newEnd += 1440;
+                    
+                    if ((newStart < existingEnd) && (existingStart < newEnd)) {
+                        conflict = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (conflict) {
+                server.send(409, "application/json", "{\"error\":\"Schedule conflict detected\"}");
+                logMessage("Schedule conflict detected for relay " + String(newSchedule.relayNumber));
+                return;
+            }
             
             schedules.push_back(newSchedule);
             saveSchedulesToEEPROM(); 
