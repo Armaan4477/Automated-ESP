@@ -408,6 +408,13 @@ const char* html = R"html(
             max-height: 300px;
             overflow-y: auto;
         }
+        .error {
+            color: #f44336;
+            display: none;
+            margin-top: -15px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
         @media (max-width: 600px) {
             .buttons {
                 flex-direction: column;
@@ -440,12 +447,15 @@ const char* html = R"html(
                 <option value="1">Relay 1</option>
                 <option value="2">Relay 2</option>
             </select>
+            <div id="relayError" class="error">Please select a relay.</div>
 
             <label for="onTime">Start Time:</label>
             <input type="time" id="onTime" placeholder="On Time">
+            <div id="onTimeError" class="error">Please enter a start time.</div>
 
             <label for="offTime">End Time:</label>
             <input type="time" id="offTime" placeholder="Off Time">
+            <div id="offTimeError" class="error">Please enter an end time.</div>
 
             <button onclick="addSchedule()">Add Schedule</button>
         </div>
@@ -511,9 +521,31 @@ const char* html = R"html(
         }
 
         function addSchedule() {
+            // Reset error messages
+            document.getElementById('relayError').style.display = 'none';
+            document.getElementById('onTimeError').style.display = 'none';
+            document.getElementById('offTimeError').style.display = 'none';
+
             const relay = document.getElementById('relaySelect').value;
             const onTime = document.getElementById('onTime').value;
             const offTime = document.getElementById('offTime').value;
+            let hasError = false;
+
+            if (relay === "") {
+                document.getElementById('relayError').style.display = 'block';
+                hasError = true;
+            }
+            if (!onTime) {
+                document.getElementById('onTimeError').style.display = 'block';
+                hasError = true;
+            }
+            if (!offTime) {
+                document.getElementById('offTimeError').style.display = 'block';
+                hasError = true;
+            }
+            if (hasError) {
+                return;
+            }
 
             fetch('/schedule/add', {
                 method: 'POST',
@@ -817,11 +849,24 @@ void handleAddSchedule() {
         DeserializationError error = deserializeJson(doc, body);
         
         if (!error) {
+            if (!doc.containsKey("relay") || !doc.containsKey("onTime") || !doc.containsKey("offTime") ||
+                doc["relay"].isNull() || doc["onTime"].isNull() || doc["offTime"].isNull()) {
+                server.send(400, "application/json", "{\"error\":\"Missing relay, onTime, or offTime\"}");
+                logMessage("Add Schedule failed: Missing fields.");
+                return;
+            }
+
             Schedule newSchedule;
             newSchedule.id = schedules.size();
-            newSchedule.relayNumber = doc["relay"];
-            String onTime = doc["onTime"];
-            String offTime = doc["offTime"];
+            newSchedule.relayNumber = doc["relay"].as<int>();
+            String onTime = doc["onTime"].as<String>();
+            String offTime = doc["offTime"].as<String>();
+
+            if (onTime.length() < 5 || offTime.length() < 5) {
+                server.send(400, "application/json", "{\"error\":\"Invalid time format\"}");
+                logMessage("Add Schedule failed: Invalid time format.");
+                return;
+            }
 
             newSchedule.onHour = onTime.substring(0, 2).toInt();
             newSchedule.onMinute = onTime.substring(3).toInt();
