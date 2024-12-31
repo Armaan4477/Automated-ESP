@@ -249,157 +249,178 @@ const char* html = R"html(
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relay Control Panel</title>
     <style>
         body {
             margin: 0;
             padding: 0;
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            font-size: 18px; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        header {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px;
+            text-align: center;
         }
         #time {
-            font-size: 36px; 
-            margin: 20px;
-            font-family: monospace;
-            color: #333;
-            text-align: center;
+            font-size: 2em;
+            margin: 20px 0;
         }
-        .relay-buttons {
+        .container {
+            padding: 20px;
+            max-width: 800px;
+            margin: auto;
+        }
+        .buttons {
             display: flex;
-            justify-content: center;
-            align-items: center;
             flex-wrap: wrap;
-            width: 100%;
-            margin: 20px auto;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
         }
         .button {
-            padding: 15px 25px;
-            color: #fff;
+            flex: 1 1 150px;
+            padding: 15px;
             background-color: #008CBA;
+            color: white;
             border: none;
-            border-radius: 4px;
-            font-size: 18px;
+            border-radius: 8px;
+            font-size: 1em;
             cursor: pointer;
-            min-width: 150px;
+            transition: background-color 0.3s;
             text-align: center;
-            text-decoration: none;
-            margin: 5px;
         }
-        .on {
+        .button.on {
             background-color: #4CAF50;
         }
-        .off {
+        .button.off {
             background-color: #f44336;
         }
-        .schedule-form {
-            margin: 20px auto;
+        .button:hover {
+            opacity: 0.9;
+        }
+        .schedule-form, .log-section {
+            background-color: white;
             padding: 20px;
-            max-width: 400px;
-            background-color: #fff;
-            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .schedule-form h3, .log-section h3 {
+            margin-top: 0;
+        }
+        .schedule-form input, .schedule-form select, .schedule-form button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
             border-radius: 4px;
+            border: 1px solid #ccc;
         }
         .schedule-table {
-            margin: 20px auto;
-            width: 90%;
+            width: 100%;
             border-collapse: collapse;
-            background-color: #fff;
+            margin-top: 20px;
+        }
+        .schedule-table th, .schedule-table td {
+            padding: 12px;
+            border: 1px solid #ddd;
+            text-align: center;
         }
         .schedule-table th {
             background-color: #f2f2f2;
-            padding: 10px;
-            text-align: left;
-        }
-        .schedule-table td {
-            border: 1px solid #ddd;
-            padding: 8px;
         }
         #errorSection {
             text-align: center;
-            margin: 20px;
-            color: red;
+            margin: 20px 0;
+            color: #fff;
+            background-color: #f44336;
+            padding: 15px;
+            border-radius: 8px;
             display: none;
         }
         #clearErrorBtn {
             padding: 10px 20px;
-            background-color: #f44336;
+            background-color: #d32f2f;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 1em;
+            margin-top: 10px;
         }
         #logSection {
-            margin: 20px;
-            padding: 10px;
-            background-color: #eee;
-            border: 1px solid #ccc;
-            max-height: 300px;
-            overflow-y: scroll;
+            display: none;
         }
-        @media screen and (max-width: 600px) {
-            body {
-                font-size: 16px; 
+        pre {
+            background-color: #f4f4f4;
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        @media (max-width: 600px) {
+            .buttons {
+                flex-direction: column;
             }
             .button {
-                width: 100%;
-                margin: 5px 0;
+                flex: 1 1 100%;
             }
         }
     </style>
 </head>
 <body>
-    <div id="time">Loading time...</div>
-    <button class="button" onclick="toggleRelay(1)" id="btn1">Relay 1</button>
-    <button class="button" onclick="toggleRelay(2)" id="btn2">Relay 2</button>
-    <button class="button" onclick="showLogs()">Show Logs</button>
-    
-    <div class="schedule-form">
-        <h3>Add Schedule</h3>
-        <select id="relaySelect">
-            <option value="1">Relay 1</option>
-            <option value="2">Relay 2</option>
-        </select>
-        <input type="time" id="onTime">
-        <input type="time" id="offTime">
-        <button onclick="addSchedule()">Add Schedule</button>
+    <header>
+        <h1>Relay Control Panel</h1>
+    </header>
+    <div class="container">
+        <div id="time">Loading time...</div>
+        <div class="buttons">
+            <button class="button" onclick="toggleRelay(1)" id="btn1">Relay 1</button>
+            <button class="button" onclick="toggleRelay(2)" id="btn2">Relay 2</button>
+            <button class="button" onclick="showLogs()">Show Logs</button>
+        </div>
+        <div class="schedule-form">
+            <h3>Add Schedule</h3>
+            <select id="relaySelect">
+                <option value="1">Relay 1</option>
+                <option value="2">Relay 2</option>
+            </select>
+            <input type="time" id="onTime" placeholder="On Time">
+            <input type="time" id="offTime" placeholder="Off Time">
+            <button onclick="addSchedule()">Add Schedule</button>
+        </div>
+        <div id="errorSection">
+            <p>Error detected!</p>
+            <button id="clearErrorBtn" onclick="clearError()">Clear Error</button>
+        </div>
+        <table class="schedule-table" id="scheduleTable">
+            <tr>
+                <th>Relay</th>
+                <th>On Time</th>
+                <th>Off Time</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </table>
+        <div class="log-section" id="logSection">
+            <h3>Logs</h3>
+            <pre id="logs"></pre>
+        </div>
     </div>
-
-    <div id="errorSection">
-        <p>Error detected!</p>
-        <button id="clearErrorBtn" onclick="clearError()">Clear Error</button>
-    </div>
-
-    <table class="schedule-table" id="scheduleTable">
-        <tr>
-            <th>Relay</th>
-            <th>On Time</th>
-            <th>Off Time</th>
-            <th>Status</th>
-            <th>Action</th>
-        </tr>
-    </table>
-
-      <div id="logSection" style="display:none;">
-        <h3>Logs</h3>
-        <pre id="logs"></pre>
-    </div>
-
     <script>
         let relayStates = {
             1: false,
             2: false
         };
 
-        // Establish WebSocket connection
         let socket = new WebSocket('ws://' + window.location.hostname + ':81/');
 
-        socket.onopen = function() {
-            console.log('WebSocket connection established');
-        };
-
-        socket.onmessage = function(event) {
+        socket.onopen = () => console.log('WebSocket connected');
+        socket.onmessage = (event) => {
             try {
                 let data = JSON.parse(event.data);
                 if (data.relay1 !== undefined) {
@@ -411,251 +432,138 @@ const char* html = R"html(
                     updateButtonStyle(2);
                 }
             } catch (e) {
-                console.error('Error parsing WebSocket message:', e);
+                console.error('WebSocket error:', e);
             }
         };
-
-        socket.onclose = function() {
-            console.log('WebSocket connection closed');
-            checkErrorStatus();
-        };
-
-        socket.onerror = function(error) {
-            console.error('WebSocket error:', error);
-            checkErrorStatus();
-        };
+        socket.onclose = () => checkErrorStatus();
+        socket.onerror = () => checkErrorStatus();
 
         function updateTime() {
             fetch('/time')
                 .then(response => response.text())
-                .then(time => {
-                    document.getElementById('time').innerHTML = time;
-                });
+                .then(time => document.getElementById('time').textContent = time);
         }
 
         function toggleRelay(relay) {
-            fetch('/relay/' + relay, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    if (response.status === 403) {
-                        return response.json().then(data => { throw new Error(data.error); });
-                    }
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Relay ' + relay + ' state:', data.state);
-                relayStates[relay] = data.state;
-                updateButtonStyle(relay);
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert(error.message);
-                checkErrorStatus();
-            });
+            fetch('/relay/' + relay, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+                .then(response => response.ok ? response.json() : response.json().then(data => { throw new Error(data.error); }))
+                .then(data => {
+                    relayStates[relay] = data.state;
+                    updateButtonStyle(relay);
+                })
+                .catch(error => { alert(error.message); checkErrorStatus(); });
         }
 
         function addSchedule() {
             const relay = document.getElementById('relaySelect').value;
             const onTime = document.getElementById('onTime').value;
             const offTime = document.getElementById('offTime').value;
-            
+
             fetch('/schedule/add', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    relay: relay,
-                    onTime: onTime,
-                    offTime: offTime
-                })
-            }).then(response => {
-                if (!response.ok) {
-                    return response.json().then(data => { throw new Error(data.error); });
-                }
-                return response.json();
-            }).then(data => {
-                loadSchedules();
-                checkErrorStatus();
-            }).catch(error => {
-                console.error('Error:', error);
-                alert('Failed to add schedule: ' + error.message);
-                checkErrorStatus();
-            });
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ relay, onTime, offTime })
+            })
+            .then(response => response.ok ? response.json() : response.json().then(data => { throw new Error(data.error); }))
+            .then(() => { loadSchedules(); checkErrorStatus(); })
+            .catch(error => { alert('Failed to add schedule: ' + error.message); checkErrorStatus(); });
         }
 
         function deleteSchedule(id) {
-          fetch('/schedule/delete?id=' + id, {
-              method: 'DELETE',
-              headers: {
-                  'Content-Type': 'application/json'
-              }
-          })
-          .then(response => {
-              if (!response.ok) {
-                  throw new Error('Failed to delete schedule');
-              }
-              return response.json();
-          })
-          .then(data => {
-              if (data.status === 'success') {
-                  loadSchedules();
-                  checkErrorStatus();
-              } else {
-                  throw new Error('Server returned error');
-              }
-          })
-          .catch(error => {
-              console.error('Error:', error);
-              alert('Failed to delete schedule: ' + error.message);
-              checkErrorStatus();
-          });
-      }
+            fetch('/schedule/delete?id=' + id, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } })
+                .then(response => response.ok ? response.json() : { status: 'error' })
+                .then(data => { if (data.status === 'success') { loadSchedules(); checkErrorStatus(); } else { throw new Error('Failed to delete schedule'); } })
+                .catch(error => { alert('Failed to delete schedule: ' + error.message); checkErrorStatus(); });
+        }
 
         function loadSchedules() {
             fetch('/schedules')
                 .then(response => response.json())
                 .then(schedules => {
                     const table = document.getElementById('scheduleTable');
-                    while (table.rows.length > 1) {
-                        table.deleteRow(1);
-                    }
-                    
+                    table.innerHTML = `<tr>
+                        <th>Relay</th>
+                        <th>On Time</th>
+                        <th>Off Time</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>`;
                     schedules.forEach((schedule, index) => {
                         const row = table.insertRow();
                         row.insertCell(0).textContent = `Relay ${schedule.relay}`;
-                        row.insertCell(1).textContent = `${schedule.onHour}:${schedule.onMinute < 10 ? '0' : ''}${schedule.onMinute}`;
-                        row.insertCell(2).textContent = `${schedule.offHour}:${schedule.offMinute < 10 ? '0' : ''}${schedule.offMinute}`;
+                        row.insertCell(1).textContent = `${String(schedule.onHour).padStart(2, '0')}:${String(schedule.onMinute).padStart(2, '0')}`;
+                        row.insertCell(2).textContent = `${String(schedule.offHour).padStart(2, '0')}:${String(schedule.offMinute).padStart(2, '0')}`;
                         row.insertCell(3).textContent = schedule.enabled ? 'Active' : 'Inactive';
                         
                         const actionCell = row.insertCell(4);
-                        
                         const toggleBtn = document.createElement('button');
                         toggleBtn.textContent = schedule.enabled ? 'Deactivate' : 'Activate';
                         toggleBtn.onclick = () => toggleSchedule(index, !schedule.enabled);
-                        actionCell.appendChild(toggleBtn);
+                        toggleBtn.style.marginRight = '10px';
                         
                         const deleteBtn = document.createElement('button');
                         deleteBtn.textContent = 'Delete';
-                        deleteBtn.style.marginLeft = '10px';
                         deleteBtn.onclick = () => deleteSchedule(index);
+                        
+                        actionCell.appendChild(toggleBtn);
                         actionCell.appendChild(deleteBtn);
                     });
-                }).catch(error => {
-                    console.error('Error loading schedules:', error);
-                    checkErrorStatus();
-                });
+                })
+                .catch(() => checkErrorStatus());
         }
 
         function toggleSchedule(id, enabled) {
             fetch('/schedule/update', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    id: id,
-                    enabled: enabled
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, enabled })
             })
-            .then(response => {
-                if (!response.ok) {
-                    return response.json().then(data => { throw new Error(data.error); });
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Schedule updated:', data);
-                loadSchedules();
-                checkErrorStatus();
-            })
-            .catch(error => {
-                console.error('Error updating schedule:', error);
-                alert('Failed to update schedule: ' + error.message);
-                checkErrorStatus();
-            });
+            .then(response => response.ok ? response.json() : response.json().then(data => { throw new Error(data.error); }))
+            .then(() => { loadSchedules(); checkErrorStatus(); })
+            .catch(error => { alert('Failed to update schedule: ' + error.message); checkErrorStatus(); });
         }
+
         function updateButtonStyle(relay) {
             const btn = document.getElementById('btn' + relay);
             if (btn) {
                 btn.className = 'button ' + (relayStates[relay] ? 'on' : 'off');
-                btn.textContent = 'Relay ' + relay + (relayStates[relay] ? ' (ON)' : ' (OFF)');
+                btn.textContent = `Relay ${relay} (${relayStates[relay] ? 'ON' : 'OFF'})`;
             }
         }
 
         function getInitialStates() {
             fetch('/relay/status')
                 .then(response => response.json())
-                .then(data => {
-                    relayStates = data;
-                    for(let relay = 1; relay <= 4; relay++) {
-                        updateButtonStyle(relay);
-                    }
-                }).catch(error => {
-                    console.error('Error getting relay status:', error);
-                    checkErrorStatus();
-                });
+                .then(data => { relayStates = data; for(let relay in relayStates) updateButtonStyle(relay); })
+                .catch(() => checkErrorStatus());
         }
 
         function checkErrorStatus() {
             fetch('/error/status')
                 .then(response => response.json())
                 .then(data => {
-                    if (data.hasError) {
-                        document.getElementById('errorSection').style.display = 'block';
-                    } else {
-                        document.getElementById('errorSection').style.display = 'none';
-                    }
+                    document.getElementById('errorSection').style.display = data.hasError ? 'block' : 'none';
                 })
-                .catch(error => {
-                    console.error('Error checking error status:', error);
+                .catch(() => {
                     document.getElementById('errorSection').style.display = 'block';
                 });
         }
 
         function clearError() {
-            fetch('/error/clear', {
-                method: 'POST'
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Failed to clear error');
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.status === 'success') {
-                    document.getElementById('errorSection').style.display = 'none';
-                } else {
-                    throw new Error('Server returned error');
-                }
-            })
-            .catch(error => {
-                console.error('Error clearing error:', error);
-                alert('Failed to clear error: ' + error.message);
-            });
+            fetch('/error/clear', { method: 'POST' })
+                .then(response => response.ok ? response.json() : { status: 'error' })
+                .then(data => { if (data.status === 'success') { document.getElementById('errorSection').style.display = 'none'; } else { throw new Error('Failed to clear error'); } })
+                .catch(error => { alert('Failed to clear error: ' + error.message); });
         }
 
         function showLogs() {
             fetch('/logs')
                 .then(response => response.json())
                 .then(data => {
-                    const logSection = document.getElementById('logSection');
-                    const logs = document.getElementById('logs');
-                    logs.textContent = data.join('\n');
-                    logSection.style.display = 'block';
+                    document.getElementById('logs').textContent = data.join('\n');
+                    document.getElementById('logSection').style.display = 'block';
                 })
-                .catch(error => {
-                    console.error('Error fetching logs:', error);
-                    alert('Failed to load logs.');
-                });
+                .catch(() => { alert('Failed to load logs.'); });
         }
 
         setInterval(updateTime, 1000);
