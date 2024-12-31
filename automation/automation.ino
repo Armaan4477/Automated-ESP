@@ -59,12 +59,12 @@ const int SCHEDULE_SIZE = sizeof(Schedule);
 const int MAX_SCHEDULES = 10;
 const int SCHEDULE_START_ADDR = 0;
 const std::vector<String> allowedIPs = {
-    "192.168.29.3",//Armaan Laptop
-    "192.168.29.4",//Armaan Ipad
-    "192.168.29.5",//Armaan Moto
+    "192.168.29.3",//A Mac
+    "192.168.29.4",//A Ipad
+    "192.168.29.5",//A Moto
     "192.168.29.6",//Acer
-    "192.168.29.9",//Farook Moto
-    "192.168.29.10"//Neeta Vivo
+    "192.168.29.9",//F Moto
+    "192.168.29.10"//N Vivo
 };
 const char* authUsername = "admin";
 const char* authPassword = "12345678";
@@ -383,7 +383,6 @@ const unsigned char favicon_png[] PROGMEM= {
   0x42, 0x60, 0x82
 };
 
-// Array of all bitmaps for convenience. (Total bytes used to store images in PROGMEM = 528)
 const size_t favicon_png_len = sizeof(favicon_png);
 
 ESP8266WebServer server(80);
