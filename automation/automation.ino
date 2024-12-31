@@ -419,6 +419,33 @@ const char* html = R"html(
             background-color: #4CAF50;
             cursor: pointer;
         }
+        #successDialog {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #4CAF50;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        #successDialog button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background-color: #fff;
+            color: #4CAF50;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        #successDialog button:hover {
+            background-color: #f1f1f1;
+        }
         @media (max-width: 600px) {
             .buttons {
                 flex-direction: column;
@@ -480,6 +507,10 @@ const char* html = R"html(
             <h3>Logs</h3>
             <pre id="logs"></pre>
         </div>
+        <div id="successDialog">
+        <p>Schedule added successfully!</p>
+        <button onclick="closeSuccessDialog()">OK</button>
+    </div>
     </div>
     <script>
         let relayStates = {
@@ -556,8 +587,23 @@ const char* html = R"html(
                 body: JSON.stringify({ relay, onTime, offTime })
             })
             .then(response => response.ok ? response.json() : response.json().then(data => { throw new Error(data.error); }))
-            .then(() => { loadSchedules(); checkErrorStatus(); })
-            .catch(error => { alert('Failed to add schedule: ' + error.message); checkErrorStatus(); });
+            .then(() => { 
+                loadSchedules(); 
+                checkErrorStatus(); 
+                showSuccessDialog(); // Show success dialog
+            })
+            .catch(error => { 
+                alert('Failed to add schedule: ' + error.message); 
+                checkErrorStatus(); 
+            });
+        }
+
+        function showSuccessDialog() {
+            document.getElementById('successDialog').style.display = 'block';
+        }
+
+        function closeSuccessDialog() {
+            document.getElementById('successDialog').style.display = 'none';
         }
 
         function deleteSchedule(id) {
