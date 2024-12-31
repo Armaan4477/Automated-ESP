@@ -436,6 +436,7 @@ const char* html = R"html(
             <h3>Add Schedule</h3>
             <label for="relaySelect">Select Relay:</label>
             <select id="relaySelect">
+                <option value="" disabled selected>Select Relay</option>
                 <option value="1">Relay 1</option>
                 <option value="2">Relay 2</option>
             </select>
