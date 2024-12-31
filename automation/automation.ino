@@ -196,6 +196,7 @@ void IRAM_ATTR setup() {
     server.on("/schedules", HTTP_GET, handleGetSchedules);
     server.on("/schedule/add", HTTP_POST, handleAddSchedule);
     server.on("/schedule/delete", HTTP_DELETE, handleDeleteSchedule);
+    server.on("/schedule/update", HTTP_POST, handleUpdateSchedule);
     server.on("/relay/status", HTTP_GET, handleRelayStatus);
     server.on("/error/clear", HTTP_POST, handleClearError);
     server.on("/error/status", HTTP_GET, handleGetErrorStatus);
@@ -530,18 +531,56 @@ const char* html = R"html(
                     schedules.forEach((schedule, index) => {
                         const row = table.insertRow();
                         row.insertCell(0).textContent = `Relay ${schedule.relay}`;
-                        row.insertCell(1).textContent = `${schedule.onHour}:${schedule.onMinute}`;
-                        row.insertCell(2).textContent = `${schedule.offHour}:${schedule.offMinute}`;
+                        row.insertCell(1).textContent = `${schedule.onHour}:${schedule.onMinute < 10 ? '0' : ''}${schedule.onMinute}`;
+                        row.insertCell(2).textContent = `${schedule.offHour}:${schedule.offMinute < 10 ? '0' : ''}${schedule.offMinute}`;
                         row.insertCell(3).textContent = schedule.enabled ? 'Active' : 'Inactive';
+                        
+                        const actionCell = row.insertCell(4);
+                        
+                        const toggleBtn = document.createElement('button');
+                        toggleBtn.textContent = schedule.enabled ? 'Deactivate' : 'Activate';
+                        toggleBtn.onclick = () => toggleSchedule(index, !schedule.enabled);
+                        actionCell.appendChild(toggleBtn);
+                        
                         const deleteBtn = document.createElement('button');
                         deleteBtn.textContent = 'Delete';
+                        deleteBtn.style.marginLeft = '10px';
                         deleteBtn.onclick = () => deleteSchedule(index);
-                        row.insertCell(4).appendChild(deleteBtn);
+                        actionCell.appendChild(deleteBtn);
                     });
                 }).catch(error => {
                     console.error('Error loading schedules:', error);
                     checkErrorStatus();
                 });
+        }
+
+        function toggleSchedule(id, enabled) {
+            fetch('/schedule/update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    id: id,
+                    enabled: enabled
+                })
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => { throw new Error(data.error); });
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('Schedule updated:', data);
+                loadSchedules();
+                checkErrorStatus();
+            })
+            .catch(error => {
+                console.error('Error updating schedule:', error);
+                alert('Failed to update schedule: ' + error.message);
+                checkErrorStatus();
+            });
         }
         function updateButtonStyle(relay) {
             const btn = document.getElementById('btn' + relay);
@@ -879,6 +918,35 @@ void handleDeleteSchedule() {
     }
     logMessage("Invalid delete request");
     server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
+}
+
+void handleUpdateSchedule() {
+    if (server.hasArg("plain")) {
+        String body = server.arg("plain");
+        StaticJsonDocument<200> doc;
+        DeserializationError error = deserializeJson(doc, body);
+        
+        if (!error) {
+            int id = doc["id"];
+            bool enabled = doc["enabled"];
+            
+            if (id >= 0 && id < schedules.size()) {
+                schedules[id].enabled = enabled;
+                saveSchedulesToEEPROM();
+                server.send(200, "application/json", "{\"status\":\"success\"}");
+                logMessage("Schedule ID " + String(id) + " " + String(enabled ? "activated." : "deactivated."));
+                clearError();
+                broadcastRelayStates();
+                return;
+            } else {
+                server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
+                logMessage("Invalid schedule update request for ID: " + String(id));
+                indicateError();
+                return;
+            }
+        }
+    }
+    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
 }
 
 void handleRoot() {
