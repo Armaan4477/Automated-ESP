@@ -48,6 +48,7 @@ unsigned long lastScheduleCheck = 0;
 unsigned long lastSecond = 0;
 bool validTimeSync = false;
 bool hasError = false;
+bool hasLaunchedSchedules = false;
 std::vector<Schedule> schedules;
 void handleAddSchedule();
 void handleDeleteSchedule();
@@ -681,6 +682,12 @@ void loop() {
         }
     }
 
+    if (!hasLaunchedSchedules && validTimeSync) {
+        checkScheduleslaunch();
+        logMessage("Startup Schedule Check Success");
+        hasLaunchedSchedules = true;
+    }
+
     yield();
 }
 
@@ -697,6 +704,44 @@ void checkSchedules() {
         }
         else if (hours == schedule.offHour && minutes == schedule.offMinute && seconds == 0) {
             deactivateRelay(schedule.relayNumber, false);
+        }
+    }
+}
+
+void checkScheduleslaunch() {
+    unsigned long hours = ((epochTime % 86400L) / 3600);
+    unsigned long minutes = ((epochTime % 3600) / 60);
+    unsigned long currentTime = hours * 60 + minutes; // total minutes in the day
+    unsigned long seconds = (epochTime % 60);
+
+    for (Schedule& schedule : schedules) {
+        if (!schedule.enabled) continue;
+        unsigned long onMinutes = schedule.onHour * 60 + schedule.onMinute;
+        unsigned long offMinutes = schedule.offHour * 60 + schedule.offMinute;
+
+        // Trigger exact minute transitions
+        if (hours == schedule.onHour && minutes == schedule.onMinute && seconds == 0) {
+            activateRelay(schedule.relayNumber, false);
+        }
+        else if (hours == schedule.offHour && minutes == schedule.offMinute && seconds == 0) {
+            deactivateRelay(schedule.relayNumber, false);
+        }
+
+        // Catch-up if time has already passed the on time
+        if (offMinutes > onMinutes) {
+            // Normal: onTime < offTime
+            if (currentTime >= onMinutes && currentTime < offMinutes) {
+                activateRelay(schedule.relayNumber, false);
+            } else {
+                deactivateRelay(schedule.relayNumber, false);
+            }
+        } else {
+            // Wraps midnight: off < on
+            if (currentTime >= onMinutes || currentTime < offMinutes) {
+                activateRelay(schedule.relayNumber, false);
+            } else {
+                deactivateRelay(schedule.relayNumber, false);
+            }
         }
     }
 }
