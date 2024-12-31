@@ -269,6 +269,7 @@ const char* html = R"html(
         #time {
             font-size: 2em;
             margin: 20px 0;
+            text-align: center;
         }
         .container {
             padding: 20px;
@@ -313,12 +314,32 @@ const char* html = R"html(
         .schedule-form h3, .log-section h3 {
             margin-top: 0;
         }
+        .schedule-form label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
         .schedule-form input, .schedule-form select, .schedule-form button {
             width: 100%;
             padding: 10px;
-            margin: 10px 0;
+            margin: 10px 0 20px 0;
             border-radius: 4px;
             border: 1px solid #ccc;
+            box-sizing: border-box;
+            font-size: 1em;
+        }
+        .schedule-form select {
+            appearance: none;
+            background-color: #fff;
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            background-size: 10px 7px;
+            padding-right: 40px;
+            cursor: pointer;
+        }
+        .schedule-form select:focus {
+            outline: none;
+            border-color: #4CAF50;
         }
         .schedule-table {
             width: 100%;
@@ -385,12 +406,18 @@ const char* html = R"html(
         </div>
         <div class="schedule-form">
             <h3>Add Schedule</h3>
+            <label for="relaySelect">Select Relay:</label>
             <select id="relaySelect">
                 <option value="1">Relay 1</option>
                 <option value="2">Relay 2</option>
             </select>
+
+            <label for="onTime">Start Time:</label>
             <input type="time" id="onTime" placeholder="On Time">
+
+            <label for="offTime">End Time:</label>
             <input type="time" id="offTime" placeholder="Off Time">
+
             <button onclick="addSchedule()">Add Schedule</button>
         </div>
         <div id="errorSection">
