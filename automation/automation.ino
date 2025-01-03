@@ -1607,6 +1607,16 @@ void handleAddSchedule() {
             bool conflict = false;
             for (const Schedule& existing : schedules) {
                 if (existing.relayNumber == newSchedule.relayNumber && existing.enabled) {
+                    bool shareDay = false;
+                    for (int i = 0; i < 7; i++) {
+                        if (newSchedule.daysOfWeek[i] && existing.daysOfWeek[i]) {
+                            shareDay = true;
+                            break;
+                        }
+                    }
+                    if (!shareDay) {
+                        continue;
+                    }
                     int existingStart = existing.onHour * 60 + existing.onMinute;
                     int existingEnd = existing.offHour * 60 + existing.offMinute;
                     int newStart = newSchedule.onHour * 60 + newSchedule.onMinute;
