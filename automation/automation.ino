@@ -1070,13 +1070,47 @@ const char* html = R"html(
         .day-checkboxes label {
             display: inline-block;
             margin-right: 10px;
-        }
-        #addScheduleBtn {
-            background-color: #ccc; // Initial color
-        }
-        #addScheduleBtn.ready {
-            background-color: #4CAF50;
+            position: relative;
+            padding-left: 25px;
             cursor: pointer;
+            font-size: 1em;
+        }
+        .day-checkboxes input {
+            position: absolute;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .day-checkboxes .checkmark {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 18px;
+            width: 18px;
+            background-color: #eee;
+            border-radius: 4px;
+        }
+        .day-checkboxes label:hover input ~ .checkmark {
+            background-color: #ccc;
+        }
+        .day-checkboxes input:checked ~ .checkmark {
+            background-color: #4CAF50;
+        }
+        .day-checkboxes .checkmark:after {
+            content: "";
+            position: absolute;
+            display: none;
+        }
+        .day-checkboxes input:checked ~ .checkmark:after {
+            display: block;
+        }
+        .day-checkboxes label .checkmark:after {
+            left: 6px;
+            top: 2px;
+            width: 5px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 3px 3px 0;
+            transform: rotate(45deg);
         }
     </style>
 </head>
@@ -1114,13 +1148,33 @@ const char* html = R"html(
 
             <label>Select Days:</label>
             <div class="day-checkboxes">
-                <label><input type="checkbox" value="0" class="dayCheckbox"> Sun</label>
-                <label><input type="checkbox" value="1" class="dayCheckbox"> Mon</label>
-                <label><input type="checkbox" value="2" class="dayCheckbox"> Tue</label>
-                <label><input type="checkbox" value="3" class="dayCheckbox"> Wed</label>
-                <label><input type="checkbox" value="4" class="dayCheckbox"> Thu</label>
-                <label><input type="checkbox" value="5" class="dayCheckbox"> Fri</label>
-                <label><input type="checkbox" value="6" class="dayCheckbox"> Sat</label>
+                <label>
+                    <input type="checkbox" value="0" class="dayCheckbox">
+                    <span class="checkmark"></span> Sun
+                </label>
+                <label>
+                    <input type="checkbox" value="1" class="dayCheckbox">
+                    <span class="checkmark"></span> Mon
+                </label>
+                <label>
+                    <input type="checkbox" value="2" class="dayCheckbox">
+                    <span class="checkmark"></span> Tue
+                </label>
+                <label>
+                    <input type="checkbox" value="3" class="dayCheckbox">
+                    <span class="checkmark"></span> Wed
+                </label>
+                <label>
+                    <input type="checkbox" value="4" class="dayCheckbox">
+                    <span class="checkmark"></span> Thu
+                </label>
+                <label>
+                    <input type="checkbox" value="5" class="dayCheckbox">
+                    <span class="checkmark"></span> Fri
+                </label>
+                <label>
+                    <input type="checkbox" value="6" class="checkmark"></span> Sat
+                </label>
             </div>
             <div id="dayError" class="error">Please select at least one day.</div>
 
