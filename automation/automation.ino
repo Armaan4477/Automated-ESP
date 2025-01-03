@@ -1176,7 +1176,8 @@ const char* html = R"html(
                     <span class="checkmark"></span> Fri
                 </label>
                 <label>
-                    <input type="checkbox" value="6" class="checkmark"></span> Sat
+                    <input type="checkbox" value="6" class="dayCheckbox">
+                    <span class="checkmark"></span> Sat
                 </label>
             </div>
             <div id="dayError" class="error2">Please select at least one day.</div>
