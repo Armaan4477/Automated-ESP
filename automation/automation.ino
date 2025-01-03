@@ -997,7 +997,7 @@ const char* html = R"html(
         .error {
             color: #f44336;
             display: none;
-            margin-top: -15px;
+            margin-top: 5px; // Adjusted to prevent overlap
             margin-bottom: 15px;
             font-size: 0.9em;
         }
@@ -1046,6 +1046,13 @@ const char* html = R"html(
         .day-checkboxes label {
             display: inline-block;
             margin-right: 10px;
+        }
+        #addScheduleBtn {
+            background-color: #ccc; // Initial color
+        }
+        #addScheduleBtn.ready {
+            background-color: #4CAF50;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -1317,6 +1324,7 @@ const char* html = R"html(
         document.getElementById('relaySelect').addEventListener('change', checkFields);
         document.getElementById('onTime').addEventListener('input', checkFields);
         document.getElementById('offTime').addEventListener('input', checkFields);
+        document.querySelectorAll('.dayCheckbox').forEach(cb => cb.addEventListener('change', checkFields));
 
         function updateButtonStyle(relay) {
             const btn = document.getElementById('btn' + relay);
