@@ -766,6 +766,7 @@ void setup() {
     server.on("/relay/status", HTTP_GET, handleRelayStatus);
     server.on("/error/clear", HTTP_POST, handleClearError);
     server.on("/error/status", HTTP_GET, handleGetErrorStatus);
+    server.on("/relay/oneclick", HTTP_POST, handleOneClickLight);
     server.begin();
     EEPROM.begin(EEPROM_SIZE);
     loadSchedulesFromEEPROM();
@@ -1054,6 +1055,7 @@ const char* html = R"html(
         <div class="buttons">
             <button class="button" onclick="toggleRelay(1)" id="btn1">WaveMaker</button>
             <button class="button" onclick="toggleRelay(2)" id="btn2">Light</button>
+            <button class="button" onclick="oneClickLight()" id="btnOneClick">Change Light Color</button>
             <button class="button" onclick="showLogs()">Show Logs</button>
         </div>
         <div class="schedule-form">
@@ -1317,6 +1319,15 @@ const char* html = R"html(
                     document.getElementById('logSection').style.display = 'block';
                 })
                 .catch(() => { alert('Failed to load logs.'); });
+        }
+
+        function oneClickLight() {
+            fetch('/relay/oneclick', { method: 'POST' })
+            .then(response => response.json().then(data => {
+                if (!response.ok) throw new Error(data.error);
+                alert('Light colour changed successfully.');
+            }))
+            .catch(error => alert(error.message));
         }
 
         setInterval(updateTime, 1000);
@@ -1709,4 +1720,19 @@ void handleClearError() {
 void handleGetErrorStatus() {
     String json = "{\"hasError\":" + String(hasError ? "true" : "false") + "}";
     server.send(200, "application/json", json);
+}
+
+void handleOneClickLight() {
+    if (relay2State || overrideRelay2) {
+        digitalWrite(relay2, HIGH);
+        relay2State = false;
+        delay(500);
+        digitalWrite(relay2, LOW);
+        relay2State = true;
+        server.send(200, "application/json", "{\"status\":\"success\"}");
+        logMessage("Relay 2 toggled off-on via One Click.");
+    } else {
+        server.send(403, "application/json", "{\"error\":\"Light is off\"}");
+        logMessage("One Click failed: Light is off.");
+    }
 }
