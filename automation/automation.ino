@@ -949,19 +949,15 @@ const char* html = R"html(
             background-color: #f1f1f1;
         }
         @media (max-width: 600px) {
+            .schedule-table {
+                display: block; /* Ensure the table behaves as a block element on mobile */
+                width: 100%;    /* Ensure the table takes full width */
+                overflow-x: auto; /* Allow horizontal scrolling within the table */
+            }
+
+            /* Optional: Apply box-sizing to include padding and border in width calculations */
             .schedule-table th, .schedule-table td {
-                padding: 8px;
-                font-size: 0.9em;
-            }
-            .buttons {
-                flex-direction: column;
-            }
-            .button {
-                flex: 1 1 100%;
-            }
-            .action-button {
-                width: 100%;
-                margin: 5px 0;
+                box-sizing: border-box;
             }
         }
         .action-button {
