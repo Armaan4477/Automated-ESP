@@ -8,6 +8,7 @@
 #include <EEPROM.h>
 #include <string>
 #include <Ticker.h>
+#include <TimeLib.h>
 
 struct Schedule {
     int id;
@@ -17,6 +18,7 @@ struct Schedule {
     int offHour;
     int offMinute;
     bool enabled;
+    bool daysOfWeek[7]; 
 };
 
 const int relay1 = 5;  // D1
@@ -692,6 +694,11 @@ void loadSchedulesFromEEPROM() {
     }
 }
 
+unsigned int currentDay = 1;
+unsigned int currentMonth = 1;
+unsigned int currentyear = 2023;
+bool validDateSync = false;
+
 void setup() {
     pinMode(relay1, OUTPUT);
     pinMode(relay2, OUTPUT);
@@ -731,9 +738,16 @@ void setup() {
     
     if (timeClient.update()) {
         epochTime = timeClient.getEpochTime();
+        setTime(epochTime);
+        
+        currentDay = day();
+        currentMonth = month();
+        currentyear = year();
+        
         lastNTPSync = millis();
         validTimeSync = true;
-        logMessage("Time sync successful");
+        validDateSync = true;
+        logMessage("Time and Date sync successful");
         clearError();
     } else {
         logMessage("Time sync failed.");
@@ -753,6 +767,7 @@ void setup() {
     server.on("/relay/status", HTTP_GET, handleRelayStatus);
     server.on("/error/clear", HTTP_POST, handleClearError);
     server.on("/error/status", HTTP_GET, handleGetErrorStatus);
+    server.on("/relay/oneclick", HTTP_POST, handleOneClickLight);
     server.begin();
     EEPROM.begin(EEPROM_SIZE);
     loadSchedulesFromEEPROM();
@@ -832,6 +847,16 @@ const char* html = R"html(
             margin: 20px 0;
             text-align: center;
         }
+        #day {
+            font-size: 1.5em;
+            margin: 10px 0;
+            text-align: center;
+        }
+        #date {
+            font-size: 1.5em;
+            margin: 10px 0;
+            text-align: center;
+        }
         .container {
             padding: 20px;
             max-width: 800px;
@@ -906,6 +931,7 @@ const char* html = R"html(
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
+            overflow-x: auto;
         }
         .schedule-table th, .schedule-table td {
             padding: 12px;
@@ -913,7 +939,26 @@ const char* html = R"html(
             text-align: center;
         }
         .schedule-table th {
-            background-color: #f2f2f2;
+            background-color: #4CAF50;
+            color: white;
+        }
+        .schedule-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .schedule-table tr:hover {
+            background-color: #f1f1f1;
+        }
+        @media (max-width: 600px) {
+            .schedule-table {
+                display: block; /* Ensure the table behaves as a block element on mobile */
+                width: 100%;    /* Ensure the table takes full width */
+                overflow-x: auto; /* Allow horizontal scrolling within the table */
+            }
+
+            /* Optional: Apply box-sizing to include padding and border in width calculations */
+            .schedule-table th, .schedule-table td {
+                box-sizing: border-box;
+            }
         }
         .action-button {
             width: 100px;
@@ -973,7 +1018,14 @@ const char* html = R"html(
             color: #f44336;
             display: none;
             margin-top: -15px;
-            margin-bottom: 15px;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+        .error2 {
+            color: #f44336;
+            display: none;
+            margin-top: 2px;
+            margin-bottom: 8px;
             font-size: 0.9em;
         }
         .ready {
@@ -1018,6 +1070,51 @@ const char* html = R"html(
                 width: 100%;
             }
         }
+        .day-checkboxes label {
+            display: inline-block;
+            margin-right: 10px;
+            position: relative;
+            padding-left: 25px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        .day-checkboxes input {
+            position: absolute;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .day-checkboxes .checkmark {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 18px;
+            width: 18px;
+            background-color: #eee;
+            border-radius: 4px;
+        }
+        .day-checkboxes label:hover input ~ .checkmark {
+            background-color: #ccc;
+        }
+        .day-checkboxes input:checked ~ .checkmark {
+            background-color: #4CAF50;
+        }
+        .day-checkboxes .checkmark:after {
+            content: "";
+            position: absolute;
+            display: none;
+        }
+        .day-checkboxes input:checked ~ .checkmark:after {
+            display: block;
+        }
+        .day-checkboxes label .checkmark:after {
+            left: 6px;
+            top: 2px;
+            width: 5px;
+            height: 10px;
+            border: solid white;
+            border-width: 0 3px 3px 0;
+            transform: rotate(45deg);
+        }
     </style>
 </head>
 <body>
@@ -1026,9 +1123,12 @@ const char* html = R"html(
     </header>
     <div class="container">
         <div id="time">Loading time...</div>
+        <div id="day">Loading day...</div>
+        <div id="date">Loading date...</div>
         <div class="buttons">
-            <button class="button" onclick="toggleRelay(1)" id="btn1">Relay 1</button>
-            <button class="button" onclick="toggleRelay(2)" id="btn2">Relay 2</button>
+            <button class="button" onclick="toggleRelay(1)" id="btn1">WaveMaker</button>
+            <button class="button" onclick="toggleRelay(2)" id="btn2">Light</button>
+            <button class="button" onclick="oneClickLight()" id="btnOneClick">Change Light Color</button>
             <button class="button" onclick="showLogs()">Show Logs</button>
         </div>
         <div class="schedule-form">
@@ -1036,8 +1136,8 @@ const char* html = R"html(
             <label for="relaySelect">Select Relay:</label>
             <select id="relaySelect">
                 <option value="" disabled selected>Select Relay</option>
-                <option value="1">Relay 1</option>
-                <option value="2">Relay 2</option>
+                <option value="1">WaveMaker</option>
+                <option value="2">Light</option>
             </select>
             <div id="relayError" class="error">Please select a relay.</div>
 
@@ -1048,6 +1148,39 @@ const char* html = R"html(
             <label for="offTime">End Time:</label>
             <input type="time" id="offTime" placeholder="Off Time">
             <div id="offTimeError" class="error">Please enter an end time.</div>
+
+            <label>Select Days:</label>
+            <div class="day-checkboxes">
+                <label>
+                    <input type="checkbox" value="0" class="dayCheckbox">
+                    <span class="checkmark"></span> Sun
+                </label>
+                <label>
+                    <input type="checkbox" value="1" class="dayCheckbox">
+                    <span class="checkmark"></span> Mon
+                </label>
+                <label>
+                    <input type="checkbox" value="2" class="dayCheckbox">
+                    <span class="checkmark"></span> Tue
+                </label>
+                <label>
+                    <input type="checkbox" value="3" class="dayCheckbox">
+                    <span class="checkmark"></span> Wed
+                </label>
+                <label>
+                    <input type="checkbox" value="4" class="dayCheckbox">
+                    <span class="checkmark"></span> Thu
+                </label>
+                <label>
+                    <input type="checkbox" value="5" class="dayCheckbox">
+                    <span class="checkmark"></span> Fri
+                </label>
+                <label>
+                    <input type="checkbox" value="6" class="dayCheckbox">
+                    <span class="checkmark"></span> Sat
+                </label>
+            </div>
+            <div id="dayError" class="error2">Please select at least one day.</div>
 
             <button id="addScheduleBtn" onclick="addSchedule()">Add Schedule</button>
         </div>
@@ -1060,6 +1193,7 @@ const char* html = R"html(
                 <th>Relay</th>
                 <th>On Time</th>
                 <th>Off Time</th>
+                <th>Days</th>
                 <th>Status</th>
                 <th>Action</th>
             </tr>
@@ -1103,7 +1237,17 @@ const char* html = R"html(
         function updateTime() {
             fetch('/time')
                 .then(response => response.text())
-                .then(time => document.getElementById('time').textContent = time);
+                .then(data => {
+                    const [time, day, date] = data.split(' ');
+                    document.getElementById('time').textContent = time;
+                    document.getElementById('day').textContent = day;
+                    document.getElementById('date').textContent = date;
+                })
+                .catch(() => {
+                    document.getElementById('time').textContent = "Time unavailable";
+                    document.getElementById('day').textContent = "Day unavailable";
+                    document.getElementById('date').textContent = "Date unavailable";
+                });
         }
 
         function toggleRelay(relay) {
@@ -1124,6 +1268,13 @@ const char* html = R"html(
             const relay = document.getElementById('relaySelect').value;
             const onTime = document.getElementById('onTime').value;
             const offTime = document.getElementById('offTime').value;
+            const dayCheckboxes = document.querySelectorAll('.dayCheckbox');
+            let days = Array(7).fill(false);
+            dayCheckboxes.forEach(cb => {
+                if(cb.checked) {
+                    days[parseInt(cb.value)] = true;
+                }
+            });
             let hasError = false;
 
             if (relay === "") {
@@ -1138,6 +1289,12 @@ const char* html = R"html(
                 document.getElementById('offTimeError').style.display = 'block';
                 hasError = true;
             }
+            if (days.every(day => day === false)) {
+                document.getElementById('dayError').style.display = 'block';
+                hasError = true;
+            } else {
+                document.getElementById('dayError').style.display = 'none';
+            }
             if (hasError) {
                 return;
             }
@@ -1145,7 +1302,7 @@ const char* html = R"html(
             fetch('/schedule/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ relay, onTime, offTime })
+                body: JSON.stringify({ relay, onTime, offTime, days })
             })
             .then(response => response.ok ? response.json() : response.json().then(data => { throw new Error(data.error); }))
             .then(() => { 
@@ -1183,17 +1340,25 @@ const char* html = R"html(
                         <th>Relay</th>
                         <th>On Time</th>
                         <th>Off Time</th>
+                        <th>Days</th>
                         <th>Status</th>
                         <th>Action</th>
                     </tr>`;
+                    let dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
                     schedules.forEach((schedule, index) => {
                         const row = table.insertRow();
-                        row.insertCell(0).textContent = `Relay ${schedule.relay}`;
+                        row.insertCell(0).textContent = schedule.relay == 1 ? "WaveMaker" : "Light";
                         row.insertCell(1).textContent = `${String(schedule.onHour).padStart(2, '0')}:${String(schedule.onMinute).padStart(2, '0')}`;
                         row.insertCell(2).textContent = `${String(schedule.offHour).padStart(2, '0')}:${String(schedule.offMinute).padStart(2, '0')}`;
-                        row.insertCell(3).textContent = schedule.enabled ? 'Active' : 'Inactive';
                         
-                        const actionCell = row.insertCell(4);
+                        const activeDays = [];
+                        schedule.daysOfWeek.forEach((active, i) => {
+                            if (active) activeDays.push(dayNames[i]);
+                        });
+                        row.insertCell(3).textContent = activeDays.join(", ");
+                        
+                        row.insertCell(4).textContent = schedule.enabled ? 'Active' : 'Inactive';
+                        const actionCell = row.insertCell(5);
                         const toggleBtn = document.createElement('button');
                         toggleBtn.textContent = schedule.enabled ? 'Deactivate' : 'Activate';
                         toggleBtn.className = 'action-button ' + (schedule.enabled ? 'deactivate' : 'activate');
@@ -1227,8 +1392,10 @@ const char* html = R"html(
             const onTime = document.getElementById('onTime').value;
             const offTime = document.getElementById('offTime').value;
             const addBtn = document.getElementById('addScheduleBtn');
+            const dayCheckboxes = document.querySelectorAll('.dayCheckbox');
+            const oneDayChecked = Array.from(dayCheckboxes).some(cb => cb.checked);
 
-            if (relay && onTime && offTime) {
+            if (relay && onTime && offTime && oneDayChecked) {
                 addBtn.classList.add('ready');
             } else {
                 addBtn.classList.remove('ready');
@@ -1239,12 +1406,14 @@ const char* html = R"html(
         document.getElementById('relaySelect').addEventListener('change', checkFields);
         document.getElementById('onTime').addEventListener('input', checkFields);
         document.getElementById('offTime').addEventListener('input', checkFields);
+        document.querySelectorAll('.dayCheckbox').forEach(cb => cb.addEventListener('change', checkFields));
 
         function updateButtonStyle(relay) {
             const btn = document.getElementById('btn' + relay);
             if (btn) {
                 btn.className = 'button ' + (relayStates[relay] ? 'on' : 'off');
-                btn.textContent = `Relay ${relay} (${relayStates[relay] ? 'ON' : 'OFF'})`;
+                const relayLabel = relay === 1 ? "WaveMaker" : "Light";
+                btn.textContent = `${relayLabel} (${relayStates[relay] ? 'ON' : 'OFF'})`;
             }
         }
 
@@ -1281,6 +1450,15 @@ const char* html = R"html(
                     document.getElementById('logSection').style.display = 'block';
                 })
                 .catch(() => { alert('Failed to load logs.'); });
+        }
+
+        function oneClickLight() {
+            fetch('/relay/oneclick', { method: 'POST' })
+            .then(response => response.json().then(data => {
+                if (!response.ok) throw new Error(data.error);
+                alert('Light colour changed successfully.');
+            }))
+            .catch(error => alert(error.message));
         }
 
         setInterval(updateTime, 1000);
@@ -1326,8 +1504,10 @@ void loop() {
     if (!validTimeSync) {
         if (timeClient.update()) {
             epochTime = timeClient.getEpochTime();
+            setTime(epochTime);
             lastNTPSync = millis();
             validTimeSync = true;
+            validDateSync = true;
             logMessage("Time sync successful (retry)");
             clearError();
         } else {
@@ -1343,6 +1523,12 @@ void loop() {
 
         if (validTimeSync) {
             checkSchedules();
+            
+            int newDay = day();
+            if (newDay != currentDay) {
+                logMessage("Day changed to: " + String(newDay));
+                currentDay = newDay;
+            }
         }
     }
 
@@ -1359,9 +1545,10 @@ void checkSchedules() {
     unsigned long hours = ((epochTime % 86400L) / 3600);
     unsigned long minutes = ((epochTime % 3600) / 60);
     unsigned long seconds = (epochTime % 60);
+    int weekdayIndex = weekday() - 1; // Sunday=1 in TimeLib
     
     for (const Schedule& schedule : schedules) {
-        if (!schedule.enabled) continue;
+        if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) continue;
         
         if (hours == schedule.onHour && minutes == schedule.onMinute && seconds == 0) {
             activateRelay(schedule.relayNumber, false);
@@ -1377,9 +1564,10 @@ void checkScheduleslaunch() {
     unsigned long minutes = ((epochTime % 3600) / 60);
     unsigned long currentTime = hours * 60 + minutes;
     unsigned long seconds = (epochTime % 60);
+    int weekdayIndex = weekday() - 1;
 
     for (Schedule& schedule : schedules) {
-        if (!schedule.enabled) continue;
+        if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) continue;
         unsigned long onMinutes = schedule.onHour * 60 + schedule.onMinute;
         unsigned long offMinutes = schedule.offHour * 60 + schedule.offMinute;
 
@@ -1458,13 +1646,22 @@ void handleGetSchedules() {
     String json = "[";
     for (size_t i = 0; i < schedules.size(); i++) {
         if (i > 0) json += ",";
-        json += "{\"id\":" + String(i) + ",";
-        json += "\"relay\":" + String(schedules[i].relayNumber) + ",";
-        json += "\"onHour\":" + String(schedules[i].onHour) + ",";
-        json += "\"onMinute\":" + String(schedules[i].onMinute) + ",";
-        json += "\"offHour\":" + String(schedules[i].offHour) + ",";
-        json += "\"offMinute\":" + String(schedules[i].offMinute) + ",";
-        json += "\"enabled\":" + String(schedules[i].enabled ? "true" : "false") + "}";
+        const Schedule &s = schedules[i];
+        json += "{";
+        json += "\"id\":" + String(i) + ",";
+        json += "\"relay\":" + String(s.relayNumber) + ",";
+        json += "\"onHour\":" + String(s.onHour) + ",";
+        json += "\"onMinute\":" + String(s.onMinute) + ",";
+        json += "\"offHour\":" + String(s.offHour) + ",";
+        json += "\"offMinute\":" + String(s.offMinute) + ",";
+        json += "\"enabled\":" + String(s.enabled ? "true" : "false") + ",";
+        json += "\"daysOfWeek\":[";
+        for (int d = 0; d < 7; d++) {
+            if (d > 0) json += ",";
+            json += (s.daysOfWeek[d] ? "true" : "false");
+        }
+        json += "]";
+        json += "}";
     }
     json += "]";
     server.send(200, "application/json", json);
@@ -1502,9 +1699,23 @@ void handleAddSchedule() {
             newSchedule.offMinute = offTime.substring(3).toInt();
             newSchedule.enabled = true;
             
+            for (int i = 0; i < 7; i++) {
+                newSchedule.daysOfWeek[i] = doc["days"][i] | false;
+            }
+            
             bool conflict = false;
             for (const Schedule& existing : schedules) {
                 if (existing.relayNumber == newSchedule.relayNumber && existing.enabled) {
+                    bool shareDay = false;
+                    for (int i = 0; i < 7; i++) {
+                        if (newSchedule.daysOfWeek[i] && existing.daysOfWeek[i]) {
+                            shareDay = true;
+                            break;
+                        }
+                    }
+                    if (!shareDay) {
+                        continue;
+                    }
                     int existingStart = existing.onHour * 60 + existing.onMinute;
                     int existingEnd = existing.offHour * 60 + existing.offMinute;
                     int newStart = newSchedule.onHour * 60 + newSchedule.onMinute;
@@ -1630,15 +1841,24 @@ void handleRelay2() {
 }
 
 void handleTime() {
-  unsigned long hours = ((epochTime % 86400L) / 3600);
-  unsigned long minutes = ((epochTime % 3600) / 60);
-  unsigned long seconds = (epochTime % 60);
+    unsigned long currentEpoch = epochTime;
 
-  String formattedTime = String(hours) + ":" + 
-                        (minutes < 10 ? "0" : "") + String(minutes) + ":" + 
-                        (seconds < 10 ? "0" : "") + String(seconds);
-                        
-  server.send(200, "text/plain", formattedTime);
+    setTime(currentEpoch);
+
+    int currentYearVal = year();
+    int currentMonthVal = month();
+    int currentDayVal = day();
+    
+    int currentWeekday = weekday();
+    const char* daysOfWeek[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+    String currentDayName = daysOfWeek[currentWeekday - 1];
+
+    String formattedTime = String(hour()) + ":" + 
+                           (minute() < 10 ? "0" : "") + String(minute()) + ":" + 
+                           (second() < 10 ? "0" : "") + String(second());
+    String formattedDate = String(currentDayVal) + "/" + String(currentMonthVal) + "/" + String(currentYearVal);
+    String response = formattedTime + " " + currentDayName + " " + formattedDate;
+    server.send(200, "text/plain", response);
 }
 
 void handleRelayStatus() {
@@ -1656,4 +1876,19 @@ void handleClearError() {
 void handleGetErrorStatus() {
     String json = "{\"hasError\":" + String(hasError ? "true" : "false") + "}";
     server.send(200, "application/json", json);
+}
+
+void handleOneClickLight() {
+    if (relay2State || overrideRelay2) {
+        digitalWrite(relay2, HIGH);
+        relay2State = false;
+        delay(500);
+        digitalWrite(relay2, LOW);
+        relay2State = true;
+        server.send(200, "application/json", "{\"status\":\"success\"}");
+        logMessage("Relay 2 toggled off-on via One Click.");
+    } else {
+        server.send(403, "application/json", "{\"error\":\"Light is off\"}");
+        logMessage("One Click failed: Light is off.");
+    }
 }
