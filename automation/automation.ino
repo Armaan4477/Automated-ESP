@@ -1021,8 +1021,15 @@ const char* html = R"html(
         .error {
             color: #f44336;
             display: none;
-            margin-top: 5px; // Adjusted to prevent overlap
-            margin-bottom: 15px;
+            margin-top: -15px;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+        .error2 {
+            color: #f44336;
+            display: none;
+            margin-top: 2px;
+            margin-bottom: 8px;
             font-size: 0.9em;
         }
         .ready {
@@ -1176,7 +1183,7 @@ const char* html = R"html(
                     <input type="checkbox" value="6" class="checkmark"></span> Sat
                 </label>
             </div>
-            <div id="dayError" class="error">Please select at least one day.</div>
+            <div id="dayError" class="error2">Please select at least one day.</div>
 
             <button id="addScheduleBtn" onclick="addSchedule()">Add Schedule</button>
         </div>
