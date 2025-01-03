@@ -1091,6 +1091,7 @@ const char* html = R"html(
                 <label><input type="checkbox" value="5" class="dayCheckbox"> Fri</label>
                 <label><input type="checkbox" value="6" class="dayCheckbox"> Sat</label>
             </div>
+            <div id="dayError" class="error">Please select at least one day.</div>
 
             <button id="addScheduleBtn" onclick="addSchedule()">Add Schedule</button>
         </div>
@@ -1199,6 +1200,12 @@ const char* html = R"html(
                 document.getElementById('offTimeError').style.display = 'block';
                 hasError = true;
             }
+            if (days.every(day => day === false)) {
+                document.getElementById('dayError').style.display = 'block';
+                hasError = true;
+            } else {
+                document.getElementById('dayError').style.display = 'none';
+            }
             if (hasError) {
                 return;
             }
@@ -1296,8 +1303,10 @@ const char* html = R"html(
             const onTime = document.getElementById('onTime').value;
             const offTime = document.getElementById('offTime').value;
             const addBtn = document.getElementById('addScheduleBtn');
+            const dayCheckboxes = document.querySelectorAll('.dayCheckbox');
+            const oneDayChecked = Array.from(dayCheckboxes).some(cb => cb.checked);
 
-            if (relay && onTime && offTime) {
+            if (relay && onTime && offTime && oneDayChecked) {
                 addBtn.classList.add('ready');
             } else {
                 addBtn.classList.remove('ready');
