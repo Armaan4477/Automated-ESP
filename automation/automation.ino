@@ -1052,8 +1052,8 @@ const char* html = R"html(
         <div id="day">Loading day...</div>
         <div id="date">Loading date...</div>
         <div class="buttons">
-            <button class="button" onclick="toggleRelay(1)" id="btn1">Relay 1</button>
-            <button class="button" onclick="toggleRelay(2)" id="btn2">Relay 2</button>
+            <button class="button" onclick="toggleRelay(1)" id="btn1">WaveMaker</button>
+            <button class="button" onclick="toggleRelay(2)" id="btn2">Light</button>
             <button class="button" onclick="showLogs()">Show Logs</button>
         </div>
         <div class="schedule-form">
@@ -1061,8 +1061,8 @@ const char* html = R"html(
             <label for="relaySelect">Select Relay:</label>
             <select id="relaySelect">
                 <option value="" disabled selected>Select Relay</option>
-                <option value="1">Relay 1</option>
-                <option value="2">Relay 2</option>
+                <option value="1">WaveMaker</option>
+                <option value="2">Light</option>
             </select>
             <div id="relayError" class="error">Please select a relay.</div>
 
@@ -1223,7 +1223,7 @@ const char* html = R"html(
                     </tr>`;
                     schedules.forEach((schedule, index) => {
                         const row = table.insertRow();
-                        row.insertCell(0).textContent = `Relay ${schedule.relay}`;
+                        row.insertCell(0).textContent = schedule.relay == 1 ? "WaveMaker" : "Light";
                         row.insertCell(1).textContent = `${String(schedule.onHour).padStart(2, '0')}:${String(schedule.onMinute).padStart(2, '0')}`;
                         row.insertCell(2).textContent = `${String(schedule.offHour).padStart(2, '0')}:${String(schedule.offMinute).padStart(2, '0')}`;
                         row.insertCell(3).textContent = schedule.enabled ? 'Active' : 'Inactive';
@@ -1279,7 +1279,8 @@ const char* html = R"html(
             const btn = document.getElementById('btn' + relay);
             if (btn) {
                 btn.className = 'button ' + (relayStates[relay] ? 'on' : 'off');
-                btn.textContent = `Relay ${relay} (${relayStates[relay] ? 'ON' : 'OFF'})`;
+                const relayLabel = relay === 1 ? "WaveMaker" : "Light";
+                btn.textContent = `${relayLabel} (${relayStates[relay] ? 'ON' : 'OFF'})`;
             }
         }
 
