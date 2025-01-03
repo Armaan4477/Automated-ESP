@@ -18,6 +18,7 @@ struct Schedule {
     int offHour;
     int offMinute;
     bool enabled;
+    bool daysOfWeek[7]; 
 };
 
 const int relay1 = 5;  // D1
@@ -1042,6 +1043,10 @@ const char* html = R"html(
                 width: 100%;
             }
         }
+        .day-checkboxes label {
+            display: inline-block;
+            margin-right: 10px;
+        }
     </style>
 </head>
 <body>
@@ -1076,6 +1081,17 @@ const char* html = R"html(
             <input type="time" id="offTime" placeholder="Off Time">
             <div id="offTimeError" class="error">Please enter an end time.</div>
 
+            <label>Select Days:</label>
+            <div class="day-checkboxes">
+                <label><input type="checkbox" value="0" class="dayCheckbox"> Sun</label>
+                <label><input type="checkbox" value="1" class="dayCheckbox"> Mon</label>
+                <label><input type="checkbox" value="2" class="dayCheckbox"> Tue</label>
+                <label><input type="checkbox" value="3" class="dayCheckbox"> Wed</label>
+                <label><input type="checkbox" value="4" class="dayCheckbox"> Thu</label>
+                <label><input type="checkbox" value="5" class="dayCheckbox"> Fri</label>
+                <label><input type="checkbox" value="6" class="dayCheckbox"> Sat</label>
+            </div>
+
             <button id="addScheduleBtn" onclick="addSchedule()">Add Schedule</button>
         </div>
         <div id="errorSection">
@@ -1087,6 +1103,7 @@ const char* html = R"html(
                 <th>Relay</th>
                 <th>On Time</th>
                 <th>Off Time</th>
+                <th>Days</th>
                 <th>Status</th>
                 <th>Action</th>
             </tr>
@@ -1161,6 +1178,13 @@ const char* html = R"html(
             const relay = document.getElementById('relaySelect').value;
             const onTime = document.getElementById('onTime').value;
             const offTime = document.getElementById('offTime').value;
+            const dayCheckboxes = document.querySelectorAll('.dayCheckbox');
+            let days = Array(7).fill(false);
+            dayCheckboxes.forEach(cb => {
+                if(cb.checked) {
+                    days[parseInt(cb.value)] = true;
+                }
+            });
             let hasError = false;
 
             if (relay === "") {
@@ -1182,7 +1206,7 @@ const char* html = R"html(
             fetch('/schedule/add', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ relay, onTime, offTime })
+                body: JSON.stringify({ relay, onTime, offTime, days })
             })
             .then(response => response.ok ? response.json() : response.json().then(data => { throw new Error(data.error); }))
             .then(() => { 
@@ -1220,17 +1244,25 @@ const char* html = R"html(
                         <th>Relay</th>
                         <th>On Time</th>
                         <th>Off Time</th>
+                        <th>Days</th>
                         <th>Status</th>
                         <th>Action</th>
                     </tr>`;
+                    let dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
                     schedules.forEach((schedule, index) => {
                         const row = table.insertRow();
                         row.insertCell(0).textContent = schedule.relay == 1 ? "WaveMaker" : "Light";
                         row.insertCell(1).textContent = `${String(schedule.onHour).padStart(2, '0')}:${String(schedule.onMinute).padStart(2, '0')}`;
                         row.insertCell(2).textContent = `${String(schedule.offHour).padStart(2, '0')}:${String(schedule.offMinute).padStart(2, '0')}`;
-                        row.insertCell(3).textContent = schedule.enabled ? 'Active' : 'Inactive';
                         
-                        const actionCell = row.insertCell(4);
+                        const activeDays = [];
+                        schedule.daysOfWeek.forEach((active, i) => {
+                            if (active) activeDays.push(dayNames[i]);
+                        });
+                        row.insertCell(3).textContent = activeDays.join(", ");
+                        
+                        row.insertCell(4).textContent = schedule.enabled ? 'Active' : 'Inactive';
+                        const actionCell = row.insertCell(5);
                         const toggleBtn = document.createElement('button');
                         toggleBtn.textContent = schedule.enabled ? 'Deactivate' : 'Activate';
                         toggleBtn.className = 'action-button ' + (schedule.enabled ? 'deactivate' : 'activate');
@@ -1414,9 +1446,10 @@ void checkSchedules() {
     unsigned long hours = ((epochTime % 86400L) / 3600);
     unsigned long minutes = ((epochTime % 3600) / 60);
     unsigned long seconds = (epochTime % 60);
+    int weekdayIndex = weekday() - 1; // Sunday=1 in TimeLib
     
     for (const Schedule& schedule : schedules) {
-        if (!schedule.enabled) continue;
+        if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) continue;
         
         if (hours == schedule.onHour && minutes == schedule.onMinute && seconds == 0) {
             activateRelay(schedule.relayNumber, false);
@@ -1432,9 +1465,10 @@ void checkScheduleslaunch() {
     unsigned long minutes = ((epochTime % 3600) / 60);
     unsigned long currentTime = hours * 60 + minutes;
     unsigned long seconds = (epochTime % 60);
+    int weekdayIndex = weekday() - 1;
 
     for (Schedule& schedule : schedules) {
-        if (!schedule.enabled) continue;
+        if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) continue;
         unsigned long onMinutes = schedule.onHour * 60 + schedule.onMinute;
         unsigned long offMinutes = schedule.offHour * 60 + schedule.offMinute;
 
@@ -1513,13 +1547,22 @@ void handleGetSchedules() {
     String json = "[";
     for (size_t i = 0; i < schedules.size(); i++) {
         if (i > 0) json += ",";
-        json += "{\"id\":" + String(i) + ",";
-        json += "\"relay\":" + String(schedules[i].relayNumber) + ",";
-        json += "\"onHour\":" + String(schedules[i].onHour) + ",";
-        json += "\"onMinute\":" + String(schedules[i].onMinute) + ",";
-        json += "\"offHour\":" + String(schedules[i].offHour) + ",";
-        json += "\"offMinute\":" + String(schedules[i].offMinute) + ",";
-        json += "\"enabled\":" + String(schedules[i].enabled ? "true" : "false") + "}";
+        const Schedule &s = schedules[i];
+        json += "{";
+        json += "\"id\":" + String(i) + ",";
+        json += "\"relay\":" + String(s.relayNumber) + ",";
+        json += "\"onHour\":" + String(s.onHour) + ",";
+        json += "\"onMinute\":" + String(s.onMinute) + ",";
+        json += "\"offHour\":" + String(s.offHour) + ",";
+        json += "\"offMinute\":" + String(s.offMinute) + ",";
+        json += "\"enabled\":" + String(s.enabled ? "true" : "false") + ",";
+        json += "\"daysOfWeek\":[";
+        for (int d = 0; d < 7; d++) {
+            if (d > 0) json += ",";
+            json += (s.daysOfWeek[d] ? "true" : "false");
+        }
+        json += "]";
+        json += "}";
     }
     json += "]";
     server.send(200, "application/json", json);
@@ -1556,6 +1599,10 @@ void handleAddSchedule() {
             newSchedule.offHour = offTime.substring(0, 2).toInt();
             newSchedule.offMinute = offTime.substring(3).toInt();
             newSchedule.enabled = true;
+            
+            for (int i = 0; i < 7; i++) {
+                newSchedule.daysOfWeek[i] = doc["days"][i] | false;
+            }
             
             bool conflict = false;
             for (const Schedule& existing : schedules) {
