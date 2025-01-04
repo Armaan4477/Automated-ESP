@@ -22,6 +22,12 @@ struct Schedule {
     bool daysOfWeek[7]; 
 };
 
+struct LogEntry {
+    unsigned long id;          // Unique ID for each log entry
+    unsigned long timestamp;   // Unix timestamp
+    String message;           // Log message
+};
+
 const int relay1 = 5;  // D1
 const int relay2 = 4;  // D2
 const int switch1Pin = 14; // D5
@@ -37,7 +43,7 @@ bool relay4State = false;
 
 const char* ssid = "Free Public Wi-Fi";
 const char* password = "2A0R0M4AAN";
-std::vector<String> logBuffer;
+std::vector<LogEntry> logBuffer;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 Ticker watchdogTicker;
@@ -52,6 +58,7 @@ unsigned long lastSecond = 0;
 bool validTimeSync = false;
 bool hasError = false;
 bool hasLaunchedSchedules = false;
+unsigned long logIdCounter = 0;
 std::vector<Schedule> schedules;
 void handleAddSchedule();
 void handleDeleteSchedule();
@@ -628,23 +635,49 @@ WebSocketsServer webSocket = WebSocketsServer(81);
 
 void logMessage(const String &message) {
     Serial.println(message);
-    logBuffer.push_back(message);
+    
+    LogEntry entry;
+    entry.id = ++logIdCounter;
+    entry.timestamp = epochTime;
+    entry.message = message;
+    
+    logBuffer.push_back(entry);
     if (logBuffer.size() > 100) {
         logBuffer.erase(logBuffer.begin());
     }
 }
 
 void handleGetLogs() {
-    StaticJsonDocument<1024> doc;
-    JsonArray array = doc.to<JsonArray>();
+    // Calculate required JSON capacity: ~100 bytes per log entry
+    const size_t capacity = JSON_ARRAY_SIZE(logBuffer.size()) + 
+                           logBuffer.size() * JSON_OBJECT_SIZE(3) + 
+                           JSON_OBJECT_SIZE(1) + 200;
     
-    for (const auto& log : logBuffer) {
-        array.add(log);
+    DynamicJsonDocument doc(capacity);
+    JsonArray logs = doc.createNestedArray("logs");
+
+    if (logBuffer.empty()) {
+        doc["status"] = "empty";
+    } else {
+        for (const auto& entry : logBuffer) {
+            JsonObject log = logs.createNestedObject();
+            log["id"] = entry.id;
+            log["timestamp"] = entry.timestamp;
+            log["message"] = entry.message;
+            
+            // Add human readable time
+            char timeStr[25];
+            time_t t = entry.timestamp;
+            strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", localtime(&t));
+            log["time"] = timeStr;
+        }
     }
-    
-    String json;
-    serializeJson(doc, json);
-    server.send(200, "application/json", json);
+
+    String response;
+    serializeJson(doc, response);
+
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.send(200, "application/json", response);
 }
 
 void resetWatchdog() {
@@ -1447,13 +1480,7 @@ const char* html = R"html(
         }
 
         function showLogs() {
-            fetch('/logs')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('logs').textContent = data.join('\n');
-                    document.getElementById('logSection').style.display = 'block';
-                })
-                .catch(() => { alert('Failed to load logs.'); });
+            window.location.href = '/logs';
         }
 
         function oneClickLight() {
