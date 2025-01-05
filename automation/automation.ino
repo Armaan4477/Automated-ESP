@@ -636,7 +636,9 @@ WebSocketsServer webSocket = WebSocketsServer(81);
 
 void storeLogEntry(const String& msg) {
     Serial.println(msg);
-    const int MAX_LOGS = 30;
+    const int MAX_LOGS = 35;
+    const int MAX_LOG_ID = 40;
+
     if (!spiffsInitialized) return;
 
     unsigned long hours = ((epochTime % 86400L) / 3600);
@@ -650,38 +652,30 @@ void storeLogEntry(const String& msg) {
     doc.clear();
 
     File file = SPIFFS.open("/logs.json", "r");
-    if (file) {
+    bool fileExists = file;
+    if (fileExists) {
         DeserializationError error = deserializeJson(doc, file);
         file.close();
-        if (!error) {
-            if (!doc["logs"].isNull()) {
-                for (JsonObject logObj : doc["logs"].as<JsonArray>()) {
-                    unsigned long existingId = logObj["id"];
-                    if (existingId >= logIdCounter) {
-                        logIdCounter = existingId + 1;
-                    }
-                }
-
-                JsonArray logs = doc["logs"].as<JsonArray>();
-                while (logs.size() >= MAX_LOGS) {
-                    unsigned long oldestId = ULONG_MAX;
-                    size_t oldestIndex = 0;
-                    size_t currentIndex = 0;
-                    
-                    for (JsonObject log : logs) {
-                        if (log["id"].as<unsigned long>() < oldestId) {
-                            oldestId = log["id"].as<unsigned long>();
-                            oldestIndex = currentIndex;
-                        }
-                        currentIndex++;
-                    }
-                    logs.remove(oldestIndex);
-                }
-            }
+        
+        if (error) {
+            doc.clear();
+            doc.createNestedArray("logs");
         }
+    } else {
+        doc.createNestedArray("logs");
     }
 
-    JsonObject newLog = doc["logs"].createNestedObject();
+    JsonArray logs = doc["logs"].as<JsonArray>();
+
+    if (logs.size() >= MAX_LOGS) {
+        logs.remove(0);
+    }
+
+    if (logIdCounter >= MAX_LOG_ID) {
+        logIdCounter = 0;
+    }
+
+    JsonObject newLog = logs.createNestedObject();
     newLog["id"] = logIdCounter++;
     newLog["timestamp"] = timeStr;
     newLog["message"] = msg;
