@@ -636,68 +636,70 @@ ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
 void storeLogEntry(const String& msg) {
-    Serial.println(message);
-
     if (!spiffsInitialized) return;
-    
+
+    // Clear or reset the JSON document before reading existing logs
+    StaticJsonDocument<2048> doc;
+    doc.clear();
+
     File file = SPIFFS.open("/logs.json", "r");
-    DynamicJsonDocument doc(4096);
     if (file) {
-        deserializeJson(doc, file);
+        DeserializationError error = deserializeJson(doc, file);
         file.close();
+        if (!error) {
+            if (!doc["logs"].isNull()) {
+                // Update logIdCounter to the highest existing log ID
+                for (JsonObject logObj : doc["logs"].as<JsonArray>()) {
+                    unsigned long existingId = logObj["id"];
+                    if (existingId >= logIdCounter) {
+                        logIdCounter = existingId + 1;
+                    }
+                }
+            }
+        }
     }
 
-    JsonArray logsArray;
-    if (!doc["logs"].isNull()) {
-        logsArray = doc["logs"].as<JsonArray>();
-    } else {
-        logsArray = doc.createNestedArray("logs");
-    }
-
-    JsonObject newLog = logsArray.createNestedObject();
+    // Prepare a new log entry
+    JsonObject newLog = doc["logs"].createNestedObject();
     newLog["id"] = logIdCounter++;
     newLog["timestamp"] = now();
     newLog["message"] = msg;
 
-    file = SPIFFS.open("/logs.json", "w");
-    if (file) {
-        serializeJson(doc, file);
-        file.close();
+    // Write updated logs back
+    File outFile = SPIFFS.open("/logs.json", "w");
+    if (outFile) {
+        serializeJson(doc, outFile);
+        outFile.close();
     }
 }
 
 void handleGetLogs() {
     if (!spiffsInitialized) {
-        server.send(500, "text/plain", "SPIFFS not initialized");
+        server.send(500, "application/json", "{\"error\":\"SPIFFS not initialized!\"}");
         return;
     }
+
+    // Clear or reset the JSON document before reading
+    StaticJsonDocument<4096> doc;
+    doc.clear();
+
     File file = SPIFFS.open("/logs.json", "r");
     if (!file) {
-        server.send(200, "application/json", "{\"logs\":[]}");
+        server.send(404, "application/json", "{\"logs\":[]}");
         return;
     }
-    size_t size = file.size();
-    if (size == 0) {
-        server.send(200, "application/json", "{\"logs\":[]}");
-        file.close();
-        return;
-    }
-    DynamicJsonDocument doc(size * 2);
+
     DeserializationError error = deserializeJson(doc, file);
     file.close();
-
     if (error) {
-        server.send(500, "text/plain", "Error reading log file");
+        server.send(500, "application/json", "{\"error\":\"Failed to parse logs!\"}");
         return;
     }
 
-    if (!doc["logs"].isNull()) {
-        String jsonResponse;
-        serializeJson(doc, jsonResponse);
-        server.send(200, "application/json", jsonResponse);
-    } else {
-        server.send(200, "application/json", "{\"logs\":[]}");
-    }
+    // Return the JSON logs data
+    String response;
+    serializeJson(doc, response);
+    server.send(200, "application/json", response);
 }
 
 void resetWatchdog() {
@@ -770,6 +772,8 @@ void setup() {
     } else {
         spiffsInitialized = true;
     }
+
+    storeLogEntry("I'm Powered onn Baby");
     
     Serial.begin(115200);
     WiFi.begin(ssid, password);
