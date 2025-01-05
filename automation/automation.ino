@@ -635,11 +635,11 @@ ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
 void storeLogEntry(const String& msg) {
+    const int MAX_LOGS = 30;
     if (!spiffsInitialized) return;
 
     unsigned long hours = ((epochTime % 86400L) / 3600);
     unsigned long minutes = ((epochTime % 3600) / 60);
-    unsigned long currentTime = hours * 60 + minutes;
     unsigned long seconds = (epochTime % 60);
 
     char timeStr[9];
@@ -659,6 +659,22 @@ void storeLogEntry(const String& msg) {
                     if (existingId >= logIdCounter) {
                         logIdCounter = existingId + 1;
                     }
+                }
+
+                JsonArray logs = doc["logs"].as<JsonArray>();
+                while (logs.size() >= MAX_LOGS) {
+                    unsigned long oldestId = ULONG_MAX;
+                    size_t oldestIndex = 0;
+                    size_t currentIndex = 0;
+                    
+                    for (JsonObject log : logs) {
+                        if (log["id"].as<unsigned long>() < oldestId) {
+                            oldestId = log["id"].as<unsigned long>();
+                            oldestIndex = currentIndex;
+                        }
+                        currentIndex++;
+                    }
+                    logs.remove(oldestIndex);
                 }
             }
         }
