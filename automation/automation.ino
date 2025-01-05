@@ -635,6 +635,7 @@ ESP8266WebServer server(80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 
 void storeLogEntry(const String& msg) {
+    Serial.println(msg);
     const int MAX_LOGS = 30;
     if (!spiffsInitialized) return;
 
@@ -785,7 +786,7 @@ void setup() {
     digitalWrite(relay2, HIGH);
 
     if (!SPIFFS.begin()) {
-        Serial.println("Failed to mount FS");
+        storeLogEntry("Failed to mount FS");
     } else {
         spiffsInitialized = true;
     }
@@ -799,7 +800,7 @@ void setup() {
     
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
-        Serial.print(".");
+        
         if (millis() - wifiStartTime > wifiTimeout) {
             storeLogEntry("WiFi connection failed.");
             indicateError();
@@ -809,8 +810,7 @@ void setup() {
     
     if (WiFi.status() == WL_CONNECTED) {
         storeLogEntry("Connected to WiFi");
-        Serial.print("IP Address: ");
-        Serial.println(WiFi.localIP());
+        storeLogEntry("IP Address: " + WiFi.localIP().toString());
         clearError();
     }
     
@@ -863,12 +863,12 @@ void setup() {
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
     switch(type) {
         case WStype_DISCONNECTED:
-            Serial.printf("WebSocket[%u] Disconnected!\n", num);
+            storeLogEntry("WebSocket " + String(num) + " Disconnected!");
             break;
         case WStype_CONNECTED: {
             IPAddress ip = webSocket.remoteIP(num);
-            Serial.printf("WebSocket[%u] Connected from %d.%d.%d.%d url: %s\n", 
-                          num, ip[0], ip[1], ip[2], ip[3], payload);
+            storeLogEntry("WebSocket " + String(num) + " Connected from " + ip.toString() + " url: " + String((char*)payload));
+
             
             String message = "{\"relay1\":" + String(relay1State || overrideRelay1) +
                              ",\"relay2\":" + String(relay2State || overrideRelay2) + "}";
@@ -1671,7 +1671,7 @@ void checkScheduleslaunch() {
 
 void activateRelay(int relayNum, bool manual) {
     if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
-        Serial.printf("Relay %d is overridden. Activation skipped.\n", relayNum);
+        storeLogEntry("Relay " + String(relayNum) + " is overridden. Activation skipped.");
         return;
     }
     
@@ -1692,7 +1692,7 @@ void activateRelay(int relayNum, bool manual) {
 
 void deactivateRelay(int relayNum, bool manual) {
     if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
-        Serial.printf("Relay %d is overridden. Deactivation skipped.\n", relayNum);
+        storeLogEntry("Relay " + String(relayNum) + " is overridden. Deactivation skipped.");
         return;
     }
     
