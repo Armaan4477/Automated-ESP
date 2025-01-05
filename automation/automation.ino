@@ -638,15 +638,15 @@ WebSocketsServer webSocket = WebSocketsServer(81);
 void logMessage(const String &message) {
     Serial.println(message);
     
-    LogEntry entry;
-    entry.id = ++logIdCounter;
-    entry.timestamp = epochTime;
-    entry.message = message;
+    // LogEntry entry;
+    // entry.id = ++logIdCounter;
+    // entry.timestamp = epochTime;
+    // entry.message = message;
     
-    logBuffer.push_back(entry);
-    if (logBuffer.size() > 100) {
-        logBuffer.erase(logBuffer.begin());
-    }
+    // logBuffer.push_back(entry);
+    // if (logBuffer.size() > 100) {
+    //     logBuffer.erase(logBuffer.begin());
+    // }
 }
 
 void storeLogEntry(const String& msg) {
@@ -679,36 +679,37 @@ void storeLogEntry(const String& msg) {
 }
 
 void handleGetLogs() {
-    // Calculate required JSON capacity: ~100 bytes per log entry
-    const size_t capacity = JSON_ARRAY_SIZE(logBuffer.size()) + 
-                           logBuffer.size() * JSON_OBJECT_SIZE(3) + 
-                           JSON_OBJECT_SIZE(1) + 200;
-    
-    DynamicJsonDocument doc(capacity);
-    JsonArray logs = doc.createNestedArray("logs");
+    if (!spiffsInitialized) {
+        server.send(500, "text/plain", "SPIFFS not initialized");
+        return;
+    }
+    File file = SPIFFS.open("/logs.json", "r");
+    if (!file) {
+        server.send(200, "application/json", "{\"logs\":[]}");
+        return;
+    }
+    size_t size = file.size();
+    if (size == 0) {
+        server.send(200, "application/json", "{\"logs\":[]}");
+        file.close();
+        return;
+    }
+    DynamicJsonDocument doc(size * 2);
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
 
-    if (logBuffer.empty()) {
-        doc["status"] = "empty";
-    } else {
-        for (const auto& entry : logBuffer) {
-            JsonObject log = logs.createNestedObject();
-            log["id"] = entry.id;
-            log["timestamp"] = entry.timestamp;
-            log["message"] = entry.message;
-            
-            // Add human readable time
-            char timeStr[25];
-            time_t t = entry.timestamp;
-            strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S", localtime(&t));
-            log["time"] = timeStr;
-        }
+    if (error) {
+        server.send(500, "text/plain", "Error reading log file");
+        return;
     }
 
-    String response;
-    serializeJson(doc, response);
-
-    server.sendHeader("Access-Control-Allow-Origin", "*");
-    server.send(200, "application/json", response);
+    if (!doc["logs"].isNull()) {
+        String jsonResponse;
+        serializeJson(doc, jsonResponse);
+        server.send(200, "application/json", jsonResponse);
+    } else {
+        server.send(200, "application/json", "{\"logs\":[]}");
+    }
 }
 
 void resetWatchdog() {
@@ -723,12 +724,14 @@ void checkWatchdog() {
 
 void indicateError() {
     logMessage("Error triggered.");
+    storeLogEntry("Error triggered.");
     digitalWrite(errorLEDPin, HIGH);
     hasError = true;
 }
 
 void clearError() {
     logMessage("Error cleared.");
+    storeLogEntry("Error cleared.");
     digitalWrite(errorLEDPin, LOW);
     hasError = false;
 }
@@ -792,6 +795,7 @@ void setup() {
         Serial.print(".");
         if (millis() - wifiStartTime > wifiTimeout) {
             logMessage("WiFi connection failed.");
+            storeLogEntry("WiFi connection failed.");
             indicateError();
             break;
         }
@@ -799,6 +803,7 @@ void setup() {
     
     if (WiFi.status() == WL_CONNECTED) {
         logMessage("Connected to WiFi");
+        storeLogEntry("Connected to WiFi");
         Serial.print("IP Address: ");
         Serial.println(WiFi.localIP());
         clearError();
@@ -819,9 +824,11 @@ void setup() {
         validTimeSync = true;
         validDateSync = true;
         logMessage("Time and Date sync successful");
+        storeLogEntry("Time and Date sync successful");
         clearError();
     } else {
         logMessage("Time sync failed.");
+        storeLogEntry("Time sync failed.");
         indicateError();
     }
 
@@ -1577,9 +1584,11 @@ void loop() {
             validTimeSync = true;
             validDateSync = true;
             logMessage("Time sync successful (retry)");
+            storeLogEntry("Time sync successful (retry)");
             clearError();
         } else {
             logMessage("Time sync failed (retry).");
+             storeLogEntry("Time sync failed (retry).");
             indicateError();
         }
     }
@@ -1595,6 +1604,7 @@ void loop() {
             int newDay = day();
             if (newDay != currentDay) {
                 logMessage("Day changed to: " + String(newDay));
+                 storeLogEntry("Day changed to: " + String(newDay));
                 currentDay = newDay;
             }
         }
@@ -1603,6 +1613,7 @@ void loop() {
     if (!hasLaunchedSchedules && validTimeSync) {
         checkScheduleslaunch();
         logMessage("Startup Schedule Check Success");
+        storeLogEntry("Startup Schedule Check Success");
         hasLaunchedSchedules = true;
     }
 
@@ -1675,11 +1686,13 @@ void activateRelay(int relayNum, bool manual) {
             digitalWrite(relay1, LOW); 
             relay1State = true; 
             logMessage("Relay 1 activated.");
+             storeLogEntry("Relay 1 activated.");
             break;
         case 2: 
             digitalWrite(relay2, LOW); 
             relay2State = true; 
             logMessage("Relay 2 activated.");
+             storeLogEntry("Relay 2 activated.");
             break;
     }
     broadcastRelayStates();
@@ -1696,11 +1709,13 @@ void deactivateRelay(int relayNum, bool manual) {
             digitalWrite(relay1, HIGH); 
             relay1State = false; 
             logMessage("Relay 1 deactivated.");
+                storeLogEntry("Relay 1 deactivated.");
             break;
         case 2: 
             digitalWrite(relay2, HIGH); 
             relay2State = false; 
             logMessage("Relay 2 deactivated.");
+             storeLogEntry("Relay 2 deactivated.");
             break;
     }
     broadcastRelayStates();
@@ -1748,6 +1763,7 @@ void handleAddSchedule() {
                 doc["relay"].isNull() || doc["onTime"].isNull() || doc["offTime"].isNull()) {
                 server.send(400, "application/json", "{\"error\":\"Missing relay, onTime, or offTime\"}");
                 logMessage("Add Schedule failed: Missing fields.");
+                 storeLogEntry("Add Schedule failed: Missing fields.");
                 return;
             }
 
@@ -1760,6 +1776,7 @@ void handleAddSchedule() {
             if (onTime.length() < 5 || offTime.length() < 5) {
                 server.send(400, "application/json", "{\"error\":\"Invalid time format\"}");
                 logMessage("Add Schedule failed: Invalid time format.");
+                 storeLogEntry("Add Schedule failed: Invalid time format.");
                 return;
             }
 
@@ -1804,6 +1821,7 @@ void handleAddSchedule() {
             if (conflict) {
                 server.send(409, "application/json", "{\"error\":\"Schedule conflict detected\"}");
                 logMessage("Schedule conflict detected for relay " + String(newSchedule.relayNumber));
+                 storeLogEntry("Schedule conflict detected for relay " + String(newSchedule.relayNumber));
                 return;
             }
             
@@ -1823,11 +1841,13 @@ void handleDeleteSchedule() {
     if (server.hasArg("id")) {
         int id = server.arg("id").toInt();
         logMessage("Delete request for schedule ID: " + String(id));
+         storeLogEntry("Delete request for schedule ID: " + String(id));
         
         if (id >= 0 && id < schedules.size()) {
             schedules.erase(schedules.begin() + id);
             saveSchedulesToEEPROM();
             logMessage("Schedule deleted successfully");
+             storeLogEntry("Schedule deleted successfully");
             server.send(200, "application/json", "{\"status\":\"success\"}");
             clearError();
             broadcastRelayStates();
@@ -1836,6 +1856,7 @@ void handleDeleteSchedule() {
         indicateError();
     }
     logMessage("Invalid delete request");
+     storeLogEntry("Invalid delete request");
     server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
 }
 
@@ -1854,12 +1875,14 @@ void handleUpdateSchedule() {
                 saveSchedulesToEEPROM();
                 server.send(200, "application/json", "{\"status\":\"success\"}");
                 logMessage("Schedule ID " + String(id) + " " + String(enabled ? "activated." : "deactivated."));
+                 storeLogEntry("Schedule ID " + String(id) + " " + String(enabled ? "activated." : "deactivated."));
                 clearError();
                 broadcastRelayStates();
                 return;
             } else {
                 server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
                 logMessage("Invalid schedule update request for ID: " + String(id));
+                    storeLogEntry("Invalid schedule update request for ID: " + String(id));
                 indicateError();
                 return;
             }
@@ -1876,11 +1899,13 @@ void handleRoot() {
 void toggleRelay(int relayPin, bool &relayState) {
     if ((relayPin == relay1 && overrideRelay1) || (relayPin == relay2 && overrideRelay2)) {
         logMessage("Physical override active, ignoring toggle.");
+         storeLogEntry("Physical override active, ignoring toggle.");
         return;
     }
     relayState = !relayState;
     digitalWrite(relayPin, relayState ? LOW : HIGH);
     logMessage("Relay state changed to: " + String(relayState));
+     storeLogEntry("Relay state changed to: " + String(relayState));
     broadcastRelayStates();
 }
 
@@ -1957,8 +1982,10 @@ void handleOneClickLight() {
         relay2State = true;
         server.send(200, "application/json", "{\"status\":\"success\"}");
         logMessage("Relay 2 toggled off-on via One Click.");
+         storeLogEntry("Relay 2 toggled off-on via One Click.");
     } else {
         server.send(403, "application/json", "{\"error\":\"Light is off\"}");
         logMessage("One Click failed: Light is off.");
+         storeLogEntry("One Click failed: Light is off.");
     }
 }
