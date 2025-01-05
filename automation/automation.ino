@@ -10,6 +10,7 @@
 #include <Ticker.h>
 #include <TimeLib.h>
 #include <ArduinoOTA.h>
+#include <FS.h>
 
 struct Schedule {
     int id;
@@ -44,6 +45,7 @@ bool relay4State = false;
 const char* ssid = "Free Public Wi-Fi";
 const char* password = "2A0R0M4AAN";
 std::vector<LogEntry> logBuffer;
+bool spiffsInitialized = false;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 Ticker watchdogTicker;
@@ -647,6 +649,35 @@ void logMessage(const String &message) {
     }
 }
 
+void storeLogEntry(const String& msg) {
+    if (!spiffsInitialized) return;
+    
+    File file = SPIFFS.open("/logs.json", "r");
+    DynamicJsonDocument doc(4096);
+    if (file) {
+        deserializeJson(doc, file);
+        file.close();
+    }
+
+    JsonArray logsArray;
+    if (!doc["logs"].isNull()) {
+        logsArray = doc["logs"].as<JsonArray>();
+    } else {
+        logsArray = doc.createNestedArray("logs");
+    }
+
+    JsonObject newLog = logsArray.createNestedObject();
+    newLog["id"] = logIdCounter++;
+    newLog["timestamp"] = now();
+    newLog["message"] = msg;
+
+    file = SPIFFS.open("/logs.json", "w");
+    if (file) {
+        serializeJson(doc, file);
+        file.close();
+    }
+}
+
 void handleGetLogs() {
     // Calculate required JSON capacity: ~100 bytes per log entry
     const size_t capacity = JSON_ARRAY_SIZE(logBuffer.size()) + 
@@ -744,6 +775,12 @@ void setup() {
     
     digitalWrite(relay1, HIGH);
     digitalWrite(relay2, HIGH);
+
+    if (!SPIFFS.begin()) {
+        Serial.println("Failed to mount FS");
+    } else {
+        spiffsInitialized = true;
+    }
     
     Serial.begin(115200);
     WiFi.begin(ssid, password);
