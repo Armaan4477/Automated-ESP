@@ -9,7 +9,6 @@
 #include <string>
 #include <Ticker.h>
 #include <TimeLib.h>
-#include <ArduinoOTA.h>
 #include <FS.h>
 
 struct Schedule {
@@ -818,9 +817,6 @@ void setup() {
         indicateError();
     }
 
-    ArduinoOTA.setHostname("ESP8266-testing");
-    ArduinoOTA.begin();
-
     server.on("/", HTTP_GET, handleRoot);
     server.on("/favicon.png", HTTP_GET, handleFavicon);
     server.on("/logs", HTTP_GET, handleGetLogs);
@@ -1598,8 +1594,6 @@ void loop() {
         storeLogEntry("Startup Schedule Check Success");
         hasLaunchedSchedules = true;
     }
-
-    ArduinoOTA.handle();
 
     yield();
 }
