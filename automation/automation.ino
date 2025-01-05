@@ -831,7 +831,8 @@ void setup() {
 
     server.on("/", HTTP_GET, handleRoot);
     server.on("/favicon.png", HTTP_GET, handleFavicon);
-    server.on("/logs", HTTP_GET, handleGetLogs);
+    server.on("/logs", HTTP_GET, handleLogsPage);
+    server.on("/logs/data", HTTP_GET, handleGetLogs);
     server.on("/relay/1", HTTP_ANY, handleRelay1);
     server.on("/relay/2", HTTP_ANY, handleRelay2);
     server.on("/time", HTTP_GET, handleTime);
@@ -1540,6 +1541,148 @@ const char* html = R"html(
 </body>
 </html>
 )html";
+
+void handleLogsPage() {
+    const char* logsHtml = R"html(
+<!DOCTYPE html>
+<html>
+<head>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="shortcut icon" type="image/png" href="/favicon.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Logs</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        header {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .container {
+            padding: 20px;
+            max-width: 1200px;
+            margin: auto;
+        }
+        .logs-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .logs-table th, .logs-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .logs-table th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .logs-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .logs-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            margin: 20px 0;
+            transition: background-color 0.3s;
+        }
+        .button:hover {
+            background-color: #45a049;
+        }
+        .refresh-button {
+            float: right;
+        }
+        .header-actions {
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        @media (max-width: 600px) {
+            .logs-table {
+                font-size: 14px;
+            }
+            .logs-table th, .logs-table td {
+                padding: 8px 10px;
+            }
+            .container {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>System Logs</h1>
+    </header>
+    <div class="container">
+        <div class="header-actions">
+            <a href="/" class="button">Back to Dashboard</a>
+            <button onclick="refreshLogs()" class="button refresh-button">Refresh Logs</button>
+        </div>
+        <table class="logs-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Timestamp</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody id="logsTableBody">
+            </tbody>
+        </table>
+    </div>
+    <script>
+        function loadLogs() {
+            fetch('/logs/data')
+                .then(response => response.json())
+                .then(data => {
+                    const tableBody = document.getElementById('logsTableBody');
+                    tableBody.innerHTML = '';
+                    
+                    if (data.logs && Array.isArray(data.logs)) {
+                        data.logs.reverse().forEach(log => {
+                            const row = tableBody.insertRow();
+                            row.insertCell(0).textContent = log.id;
+                            row.insertCell(1).textContent = log.timestamp;
+                            row.insertCell(2).textContent = log.message;
+                        });
+                    }
+                })
+                .catch(error => console.error('Error loading logs:', error));
+        }
+
+        function refreshLogs() {
+            loadLogs();
+        }
+
+        // Load logs when page loads
+        loadLogs();
+        // Refresh logs every 10 seconds
+        setInterval(loadLogs, 10000);
+    </script>
+</body>
+</html>
+)html";
+    server.send(200, "text/html", logsHtml);
+}
 
 void loop() {
     server.handleClient();
