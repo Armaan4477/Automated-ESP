@@ -23,9 +23,9 @@ struct Schedule {
 };
 
 struct LogEntry {
-    unsigned long id;          // Unique ID for each log entry
-    unsigned long timestamp;   // Unix timestamp
-    String message;           // Log message
+    unsigned long id;
+    String timestamp;
+    String message;
 };
 
 const int relay1 = 5;  // D1
@@ -637,7 +637,14 @@ WebSocketsServer webSocket = WebSocketsServer(81);
 void storeLogEntry(const String& msg) {
     if (!spiffsInitialized) return;
 
-    // Clear or reset the JSON document before reading existing logs
+    unsigned long hours = ((epochTime % 86400L) / 3600);
+    unsigned long minutes = ((epochTime % 3600) / 60);
+    unsigned long currentTime = hours * 60 + minutes;
+    unsigned long seconds = (epochTime % 60);
+
+    char timeStr[9];
+    sprintf(timeStr, "%02lu:%02lu:%02lu", hours, minutes, seconds);
+
     StaticJsonDocument<2048> doc;
     doc.clear();
 
@@ -647,7 +654,6 @@ void storeLogEntry(const String& msg) {
         file.close();
         if (!error) {
             if (!doc["logs"].isNull()) {
-                // Update logIdCounter to the highest existing log ID
                 for (JsonObject logObj : doc["logs"].as<JsonArray>()) {
                     unsigned long existingId = logObj["id"];
                     if (existingId >= logIdCounter) {
@@ -658,13 +664,11 @@ void storeLogEntry(const String& msg) {
         }
     }
 
-    // Prepare a new log entry
     JsonObject newLog = doc["logs"].createNestedObject();
     newLog["id"] = logIdCounter++;
-    newLog["timestamp"] = now();
+    newLog["timestamp"] = timeStr;
     newLog["message"] = msg;
 
-    // Write updated logs back
     File outFile = SPIFFS.open("/logs.json", "w");
     if (outFile) {
         serializeJson(doc, outFile);
@@ -678,7 +682,6 @@ void handleGetLogs() {
         return;
     }
 
-    // Clear or reset the JSON document before reading
     StaticJsonDocument<4096> doc;
     doc.clear();
 
@@ -695,7 +698,6 @@ void handleGetLogs() {
         return;
     }
 
-    // Return the JSON logs data
     String response;
     serializeJson(doc, response);
     server.send(200, "application/json", response);
