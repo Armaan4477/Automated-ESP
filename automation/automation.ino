@@ -645,8 +645,14 @@ void storeLogEntry(const String& msg) {
     unsigned long minutes = ((epochTime % 3600) / 60);
     unsigned long seconds = (epochTime % 60);
 
-    char timeStr[9];
-    sprintf(timeStr, "%02lu:%02lu:%02lu", hours, minutes, seconds);
+    int currentDay = day();
+    int currentMonth = month();
+    int currentYear = year();
+
+    char timeStr[20];
+    sprintf(timeStr, "%02d/%02d/%d %02lu:%02lu:%02lu", 
+            currentDay, currentMonth, currentYear,
+            hours, minutes, seconds);
 
     StaticJsonDocument<2048> doc;
     doc.clear();
