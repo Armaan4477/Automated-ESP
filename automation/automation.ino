@@ -57,6 +57,8 @@ unsigned long lastNTPSync = 0;
 unsigned long lastScheduleCheck = 0;
 unsigned long lastSecond = 0;
 bool validTimeSync = false;
+unsigned long last90MinCheck = 0;
+const unsigned long CHECK_90MIN_INTERVAL = 5400;
 bool hasError = false;
 bool hasLaunchedSchedules = false;
 unsigned long logIdCounter = 0;
@@ -790,8 +792,6 @@ void setup() {
     } else {
         spiffsInitialized = true;
     }
-
-    storeLogEntry("I'm Powered onn Baby");
     
     Serial.begin(115200);
     WiFi.begin(ssid, password);
@@ -1742,10 +1742,22 @@ void loop() {
         if (validTimeSync) {
             checkSchedules();
             
+            unsigned long currentSeconds = hour() * 3600 + minute() * 60 + second();
+            if (currentSeconds - last90MinCheck >= CHECK_90MIN_INTERVAL || 
+                (last90MinCheck > currentSeconds && currentSeconds >= 0)) {
+                
+                String timeStr = String(hour()) + ":" + 
+                              (minute() < 10 ? "0" : "") + String(minute());
+                
+                storeLogEntry("Device is powered onn at " + timeStr);
+                last90MinCheck = currentSeconds;
+            }
+            
             int newDay = day();
             if (newDay != currentDay) {
-                 storeLogEntry("Day changed to: " + String(newDay));
+                storeLogEntry("Day changed to: " + String(newDay));
                 currentDay = newDay;
+                last90MinCheck = 0;
             }
         }
     }
