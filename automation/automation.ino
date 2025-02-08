@@ -1793,33 +1793,50 @@ void checkScheduleslaunch() {
     unsigned long hours = ((epochTime % 86400L) / 3600);
     unsigned long minutes = ((epochTime % 3600) / 60);
     unsigned long currentTime = hours * 60 + minutes;
-    unsigned long seconds = (epochTime % 60);
     int weekdayIndex = weekday() - 1;
 
-    for (Schedule& schedule : schedules) {
-        if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) continue;
+    bool relay1ShouldBeOn = false;
+    bool relay2ShouldBeOn = false;
+
+    for (const Schedule& schedule : schedules) {
+        if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) {
+            continue;
+        }
+
         unsigned long onMinutes = schedule.onHour * 60 + schedule.onMinute;
         unsigned long offMinutes = schedule.offHour * 60 + schedule.offMinute;
 
-        if (hours == schedule.onHour && minutes == schedule.onMinute && seconds == 0) {
-            activateRelay(schedule.relayNumber, false);
-        }
-        else if (hours == schedule.offHour && minutes == schedule.offMinute && seconds == 0) {
-            deactivateRelay(schedule.relayNumber, false);
+        bool shouldBeOn = false;
+        if (offMinutes > onMinutes) {
+            shouldBeOn = (currentTime >= onMinutes && currentTime < offMinutes);
+        } else {
+            shouldBeOn = (currentTime >= onMinutes || currentTime < offMinutes);
         }
 
-        if (offMinutes > onMinutes) {
-            if (currentTime >= onMinutes && currentTime < offMinutes) {
-                activateRelay(schedule.relayNumber, false);
-            } else {
-                deactivateRelay(schedule.relayNumber, false);
-            }
+        if (schedule.relayNumber == 1) {
+            relay1ShouldBeOn |= shouldBeOn;
+        } else if (schedule.relayNumber == 2) {
+            relay2ShouldBeOn |= shouldBeOn;
+        }
+    }
+
+    if (!overrideRelay1) {
+        if (relay1ShouldBeOn) {
+            activateRelay(1, false);
+            storeLogEntry("Relay 1 activated by startup schedule check");
         } else {
-            if (currentTime >= onMinutes || currentTime < offMinutes) {
-                activateRelay(schedule.relayNumber, false);
-            } else {
-                deactivateRelay(schedule.relayNumber, false);
-            }
+            deactivateRelay(1, false);
+            storeLogEntry("Relay 1 deactivated by startup schedule check");
+        }
+    }
+
+    if (!overrideRelay2) {
+        if (relay2ShouldBeOn) {
+            activateRelay(2, false);
+            storeLogEntry("Relay 2 activated by startup schedule check");
+        } else {
+            deactivateRelay(2, false);
+            storeLogEntry("Relay 2 deactivated by startup schedule check");
         }
     }
 }
