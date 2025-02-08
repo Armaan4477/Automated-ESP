@@ -71,6 +71,8 @@ const int EEPROM_SIZE = 512;
 const int SCHEDULE_SIZE = sizeof(Schedule);
 const int MAX_SCHEDULES = 10;
 const int SCHEDULE_START_ADDR = 0;
+const int TOGGLE_DELAY = 500;
+const int TOGGLE_COUNT = 3; 
 const std::vector<String> allowedIPs = {
     "192.168.29.3",//A Mac
     "192.168.29.4",//A Ipad
@@ -1851,12 +1853,11 @@ void activateRelay(int relayNum, bool manual) {
         case 1: 
             digitalWrite(relay1, LOW); 
             relay1State = true; 
-             storeLogEntry("Relay 1 activated.");
+            storeLogEntry("Relay 1 activated.");
             break;
         case 2: 
-            digitalWrite(relay2, LOW); 
-            relay2State = true; 
-             storeLogEntry("Relay 2 activated.");
+            toggleLightSequence();
+            storeLogEntry("Relay 2 activated with toggle sequence.");
             break;
     }
     broadcastRelayStates();
@@ -2080,11 +2081,33 @@ void handleRelay2() {
             server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
             return;
         }
-        toggleRelay(relay2, relay2State);
+        
+        if (!relay2State) {
+            toggleLightSequence();
+        } else {
+            digitalWrite(relay2, HIGH);
+            relay2State = false;
+            storeLogEntry("Relay 2 deactivated.");
+        }
+        
         server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
+        broadcastRelayStates();
     } else if (server.method() == HTTP_GET) {
         server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
     }
+}
+
+void toggleLightSequence() {
+    for(int i = 0; i < TOGGLE_COUNT; i++) {
+        digitalWrite(relay2, HIGH);
+        delay(TOGGLE_DELAY);
+        digitalWrite(relay2, LOW);
+        delay(TOGGLE_DELAY);
+    }
+    digitalWrite(relay2, LOW);
+    relay2State = true;
+    storeLogEntry("Light relay toggled sequence completed");
+    broadcastRelayStates();
 }
 
 void handleTime() {
