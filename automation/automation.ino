@@ -638,6 +638,33 @@ ESP8266WebServer server(80);
 
 WebSocketsServer webSocket = WebSocketsServer(81);
 
+void handleGetLogs() {
+    if (!spiffsInitialized) {
+        server.send(500, "application/json", "{\"error\":\"SPIFFS not initialized!\"}");
+        return;
+    }
+
+    StaticJsonDocument<4096> doc;
+    doc.clear();
+
+    File file = SPIFFS.open("/logs.json", "r");
+    if (!file) {
+        server.send(404, "application/json", "{\"logs\":[]}");
+        return;
+    }
+
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+    if (error) {
+        server.send(500, "application/json", "{\"error\":\"Failed to parse logs!\"}");
+        return;
+    }
+
+    String response;
+    serializeJson(doc, response);
+    server.send(200, "application/json", response);
+}
+
 void storeLogEntry(const String& msg) {
     Serial.println(msg);
     const int MAX_LOGS = 35;
@@ -807,33 +834,6 @@ void clearError() {
     storeLogEntry("Error cleared.");
     digitalWrite(errorLEDPin, LOW);
     hasError = false;
-}
-
-void handleGetLogs() {
-    if (!spiffsInitialized) {
-        server.send(500, "application/json", "{\"error\":\"SPIFFS not initialized!\"}");
-        return;
-    }
-
-    StaticJsonDocument<4096> doc;
-    doc.clear();
-
-    File file = SPIFFS.open("/logs.json", "r");
-    if (!file) {
-        server.send(404, "application/json", "{\"logs\":[]}");
-        return;
-    }
-
-    DeserializationError error = deserializeJson(doc, file);
-    file.close();
-    if (error) {
-        server.send(500, "application/json", "{\"error\":\"Failed to parse logs!\"}");
-        return;
-    }
-
-    String response;
-    serializeJson(doc, response);
-    server.send(200, "application/json", response);
 }
 
 void saveSchedulesToEEPROM() {
