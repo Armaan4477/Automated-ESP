@@ -697,33 +697,6 @@ void storeLogEntry(const String& msg) {
     }
 }
 
-void handleGetLogs() {
-    if (!spiffsInitialized) {
-        server.send(500, "application/json", "{\"error\":\"SPIFFS not initialized!\"}");
-        return;
-    }
-
-    StaticJsonDocument<4096> doc;
-    doc.clear();
-
-    File file = SPIFFS.open("/logs.json", "r");
-    if (!file) {
-        server.send(404, "application/json", "{\"logs\":[]}");
-        return;
-    }
-
-    DeserializationError error = deserializeJson(doc, file);
-    file.close();
-    if (error) {
-        server.send(500, "application/json", "{\"error\":\"Failed to parse logs!\"}");
-        return;
-    }
-
-    String response;
-    serializeJson(doc, response);
-    server.send(200, "application/json", response);
-}
-
 void resetWatchdog() {
     lastLoopTime = millis();
 }
@@ -734,50 +707,14 @@ void checkWatchdog() {
     }
 }
 
-void indicateError() {
-    storeLogEntry("Error triggered.");
-    digitalWrite(errorLEDPin, HIGH);
-    hasError = true;
-}
-
-void clearError() {
-    storeLogEntry("Error cleared.");
-    digitalWrite(errorLEDPin, LOW);
-    hasError = false;
-}
-
-void saveSchedulesToEEPROM() {
-    int addr = SCHEDULE_START_ADDR;
-    EEPROM.write(addr, schedules.size());
-    addr++;
-    
-    for(const Schedule& schedule : schedules) {
-        EEPROM.put(addr, schedule);
-        addr += SCHEDULE_SIZE;
-    }
-    EEPROM.commit();
-}
-
-void loadSchedulesFromEEPROM() {
-    schedules.clear();
-    int addr = SCHEDULE_START_ADDR;
-    int count = EEPROM.read(addr);
-    addr++;
-    
-    for(int i = 0; i < count && i < MAX_SCHEDULES; i++) {
-        Schedule schedule;
-        EEPROM.get(addr, schedule);
-        schedules.push_back(schedule);
-        addr += SCHEDULE_SIZE;
-    }
-}
-
 unsigned int currentDay = 1;
 unsigned int currentMonth = 1;
 unsigned int currentyear = 2023;
 bool validDateSync = false;
 
 void setup() {
+    digitalWrite(relay1, HIGH);
+    digitalWrite(relay2, HIGH);
     pinMode(relay1, OUTPUT);
     pinMode(relay2, OUTPUT);
     pinMode(switch1Pin, INPUT_PULLUP);
@@ -785,9 +722,6 @@ void setup() {
     
     pinMode(errorLEDPin, OUTPUT);
     digitalWrite(errorLEDPin, LOW);
-    
-    digitalWrite(relay1, HIGH);
-    digitalWrite(relay2, HIGH);
 
     if (!SPIFFS.begin()) {
         storeLogEntry("Failed to mount FS");
@@ -861,6 +795,71 @@ void setup() {
 
     resetWatchdog();
     watchdogTicker.attach(1, checkWatchdog);
+}
+
+void indicateError() {
+    storeLogEntry("Error triggered.");
+    digitalWrite(errorLEDPin, HIGH);
+    hasError = true;
+}
+
+void clearError() {
+    storeLogEntry("Error cleared.");
+    digitalWrite(errorLEDPin, LOW);
+    hasError = false;
+}
+
+void handleGetLogs() {
+    if (!spiffsInitialized) {
+        server.send(500, "application/json", "{\"error\":\"SPIFFS not initialized!\"}");
+        return;
+    }
+
+    StaticJsonDocument<4096> doc;
+    doc.clear();
+
+    File file = SPIFFS.open("/logs.json", "r");
+    if (!file) {
+        server.send(404, "application/json", "{\"logs\":[]}");
+        return;
+    }
+
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+    if (error) {
+        server.send(500, "application/json", "{\"error\":\"Failed to parse logs!\"}");
+        return;
+    }
+
+    String response;
+    serializeJson(doc, response);
+    server.send(200, "application/json", response);
+}
+
+void saveSchedulesToEEPROM() {
+    int addr = SCHEDULE_START_ADDR;
+    EEPROM.write(addr, schedules.size());
+    addr++;
+    
+    for(const Schedule& schedule : schedules) {
+        EEPROM.put(addr, schedule);
+        addr += SCHEDULE_SIZE;
+    }
+    EEPROM.commit();
+}
+
+void loadSchedulesFromEEPROM() {
+    schedules.clear();
+    int addr = SCHEDULE_START_ADDR;
+    int count = EEPROM.read(addr);
+    addr++;
+    
+    for(int i = 0; i < count && i < MAX_SCHEDULES; i++) {
+        Schedule schedule;
+        EEPROM.get(addr, schedule);
+        schedules.push_back(schedule);
+        addr += SCHEDULE_SIZE;
+    }
 }
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
