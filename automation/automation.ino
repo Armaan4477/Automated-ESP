@@ -1696,29 +1696,8 @@ void loop() {
     webSocket.loop();
     resetWatchdog();
 
-    if (digitalRead(switch1Pin) == LOW) {
-        if (!overrideRelay1) {
-            overrideRelay1 = true;
-            activateRelay(1, true);
-        }
-    } else {
-        if (overrideRelay1) {
-            overrideRelay1 = false;
-            deactivateRelay(1, true);
-        }
-    }
-
-    if (digitalRead(switch2Pin) == LOW) {
-        if (!overrideRelay2) {
-            overrideRelay2 = true;
-            activateRelay(2, true);
-        }
-    } else {
-        if (overrideRelay2) {
-            overrideRelay2 = false;
-            deactivateRelay(2, true);
-        }
-    }
+    checkoverride1();
+    checkoverride2();
 
     if (!validTimeSync) {
         if (timeClient.update()) {
@@ -2159,5 +2138,33 @@ void handleOneClickLight() {
     } else {
         server.send(403, "application/json", "{\"error\":\"Light is off\"}");
          storeLogEntry("One Click failed: Light is off.");
+    }
+}
+
+void checkoverride1(){
+  if (digitalRead(switch1Pin) == LOW) {
+        if (!overrideRelay1) {
+            overrideRelay1 = true;
+            activateRelay(1, true);
+        }
+    } else {
+        if (overrideRelay1) {
+            overrideRelay1 = false;
+            deactivateRelay(1, true);
+        }
+    }
+}
+
+void checkoverride2(){
+  if (digitalRead(switch2Pin) == LOW) {
+        if (!overrideRelay2) {
+            overrideRelay2 = true;
+            activateRelay(2, true);
+        }
+    } else {
+        if (overrideRelay2) {
+            overrideRelay2 = false;
+            deactivateRelay(2, true);
+        }
     }
 }
