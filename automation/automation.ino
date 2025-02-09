@@ -2141,30 +2141,42 @@ void handleOneClickLight() {
     }
 }
 
-void checkoverride1(){
-  if (digitalRead(switch1Pin) == LOW) {
-        if (!overrideRelay1) {
-            overrideRelay1 = true;
-            activateRelay(1, true);
-        }
-    } else {
+void checkoverride1() {
+    bool switchState = (digitalRead(switch1Pin) == LOW);
+    
+    if (switchState != overrideRelay1) {
+        overrideRelay1 = switchState;
+        
         if (overrideRelay1) {
-            overrideRelay1 = false;
-            deactivateRelay(1, true);
+            if (!relay1State) {
+                activateRelay(1, true);
+            }
+        } else {
+            if (relay1State) {
+                deactivateRelay(1, true);
+            }
         }
+        storeLogEntry("Relay 1 override changed to: " + String(overrideRelay1));
+        broadcastRelayStates();
     }
 }
 
-void checkoverride2(){
-  if (digitalRead(switch2Pin) == LOW) {
-        if (!overrideRelay2) {
-            overrideRelay2 = true;
-            activateRelay(2, true);
-        }
-    } else {
+void checkoverride2() {
+    bool switchState = (digitalRead(switch2Pin) == LOW);
+    
+    if (switchState != overrideRelay2) {
+        overrideRelay2 = switchState;
+        
         if (overrideRelay2) {
-            overrideRelay2 = false;
-            deactivateRelay(2, true);
+            if (!relay2State) {
+                activateRelay(2, true);
+            }
+        } else {
+            if (relay2State) {
+                deactivateRelay(2, true);
+            }
         }
+        storeLogEntry("Relay 2 override changed to: " + String(overrideRelay2));
+        broadcastRelayStates();
     }
 }
