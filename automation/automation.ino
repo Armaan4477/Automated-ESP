@@ -1755,16 +1755,26 @@ void checkSchedules() {
     unsigned long hours = ((epochTime % 86400L) / 3600);
     unsigned long minutes = ((epochTime % 3600) / 60);
     unsigned long seconds = (epochTime % 60);
-    int weekdayIndex = weekday() - 1; // Sunday=1 in TimeLib
+    int weekdayIndex = weekday() - 1;
     
     for (const Schedule& schedule : schedules) {
         if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) continue;
         
         if (hours == schedule.onHour && minutes == schedule.onMinute && seconds == 0) {
-            activateRelay(schedule.relayNumber, false);
+            bool currentState = (schedule.relayNumber == 1) ? relay1State : relay2State;
+            bool override = (schedule.relayNumber == 1) ? overrideRelay1 : overrideRelay2;
+            
+            if (!currentState && !override) {
+                activateRelay(schedule.relayNumber, false);
+            }
         }
         else if (hours == schedule.offHour && minutes == schedule.offMinute && seconds == 0) {
-            deactivateRelay(schedule.relayNumber, false);
+            bool currentState = (schedule.relayNumber == 1) ? relay1State : relay2State;
+            bool override = (schedule.relayNumber == 1) ? overrideRelay1 : overrideRelay2;
+            
+            if (currentState && !override) {
+                deactivateRelay(schedule.relayNumber, false);
+            }
         }
     }
 }
