@@ -81,6 +81,9 @@ const std::vector<String> allowedIPs = {
     "192.168.29.9",//F Moto
     "192.168.29.10"//N Vivo
 };
+unsigned long lastSwitch1Debounce = 0;
+unsigned long lastSwitch2Debounce = 0;
+const unsigned long DEBOUNCE_DELAY = 500;
 const char* authUsername = "admin";
 const char* authPassword = "12345678";
 
@@ -2152,41 +2155,52 @@ void handleOneClickLight() {
 }
 
 void checkoverride1() {
-    bool switchState = (digitalRead(switch1Pin) == LOW);
+    bool currentReading = (digitalRead(switch1Pin) == LOW);
     
-    if (switchState != overrideRelay1) {
-        overrideRelay1 = switchState;
-        
-        if (overrideRelay1) {
-            if (!relay1State) {
-                activateRelay(1, true);
+    if ((millis() - lastSwitch1Debounce) > DEBOUNCE_DELAY) {
+        if (currentReading != overrideRelay1) {
+            lastSwitch1Debounce = millis();
+            overrideRelay1 = currentReading;
+            
+            if (overrideRelay1) {
+                if (!relay1State) {
+                    activateRelay(1, true);
+                    indicateError();
+                }
+            } else {
+                if (relay1State) {
+                    deactivateRelay(1, true);
+                    clearError();
+                }
             }
-        } else {
-            if (relay1State) {
-                deactivateRelay(1, true);
-            }
+            storeLogEntry("Relay 1 override changed to: " + String(overrideRelay1));
+            broadcastRelayStates();
         }
-        storeLogEntry("Relay 1 override changed to: " + String(overrideRelay1));
-        broadcastRelayStates();
     }
 }
 
 void checkoverride2() {
-    bool switchState = (digitalRead(switch2Pin) == LOW);
+    bool currentReading = (digitalRead(switch2Pin) == LOW);
     
-    if (switchState != overrideRelay2) {
-        overrideRelay2 = switchState;
-        
-        if (overrideRelay2) {
-            if (!relay2State) {
-                activateRelay(2, true);
+    if ((millis() - lastSwitch2Debounce) > DEBOUNCE_DELAY) {
+        if (currentReading != overrideRelay2) {
+            lastSwitch2Debounce = millis();
+            overrideRelay2 = currentReading;
+            
+            if (overrideRelay2) {
+                if (!relay2State) {
+                    activateRelay(2, true);
+                    clearError();
+                    indicateError();
+                }
+            } else {
+                if (relay2State) {
+                    deactivateRelay(2, true);
+                    clearError();
+                }
             }
-        } else {
-            if (relay2State) {
-                deactivateRelay(2, true);
-            }
+            storeLogEntry("Relay 2 override changed to: " + String(overrideRelay2));
+            broadcastRelayStates();
         }
-        storeLogEntry("Relay 2 override changed to: " + String(overrideRelay2));
-        broadcastRelayStates();
     }
 }
