@@ -84,6 +84,9 @@ const std::vector<String> allowedIPs = {
 unsigned long lastSwitch1Debounce = 0;
 unsigned long lastSwitch2Debounce = 0;
 const unsigned long DEBOUNCE_DELAY = 500;
+unsigned long lastBlinkTime = 0;
+const unsigned long BLINK_INTERVAL = 1000;
+bool blinkState = false;
 const char* authUsername = "admin";
 const char* authPassword = "12345678";
 
@@ -1701,6 +1704,7 @@ void loop() {
 
     checkoverride1();
     checkoverride2();
+    overrideLEDState();
 
     if (!validTimeSync) {
         if (timeClient.update()) {
@@ -2165,12 +2169,10 @@ void checkoverride1() {
             if (overrideRelay1) {
                 if (!relay1State) {
                     activateRelay(1, true);
-                    indicateError();
                 }
             } else {
                 if (relay1State) {
                     deactivateRelay(1, true);
-                    clearError();
                 }
             }
             storeLogEntry("Relay 1 override changed to: " + String(overrideRelay1));
@@ -2190,17 +2192,33 @@ void checkoverride2() {
             if (overrideRelay2) {
                 if (!relay2State) {
                     activateRelay(2, true);
-                    clearError();
-                    indicateError();
                 }
             } else {
                 if (relay2State) {
                     deactivateRelay(2, true);
-                    clearError();
                 }
             }
             storeLogEntry("Relay 2 override changed to: " + String(overrideRelay2));
             broadcastRelayStates();
         }
+    }
+}
+
+void overrideLEDState() {
+    bool anyOverrideActive = overrideRelay1 || overrideRelay2;
+
+    if (hasError) {
+        return;
+    }
+    
+    if (anyOverrideActive) {
+        if (millis() - lastBlinkTime >= BLINK_INTERVAL) {
+            lastBlinkTime = millis();
+            blinkState = !blinkState;
+            digitalWrite(errorLEDPin, blinkState);
+        }
+    } else {
+        digitalWrite(errorLEDPin, LOW);
+        blinkState = false;
     }
 }
