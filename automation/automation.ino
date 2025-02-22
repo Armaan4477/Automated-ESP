@@ -84,6 +84,16 @@ const std::vector<String> allowedIPs = {
 unsigned long lastSwitch1Debounce = 0;
 unsigned long lastSwitch2Debounce = 0;
 const unsigned long DEBOUNCE_DELAY = 500;
+unsigned long switch1PressStartTime = 0;
+unsigned long switch2PressStartTime = 0;
+bool switch1LastState = false;
+bool switch2LastState = false;
+const unsigned long HOLD_DURATION = 1000;
+extern unsigned long switch1PressStartTime;
+extern unsigned long switch2PressStartTime;
+extern bool switch1LastState;
+extern bool switch2LastState;
+extern const unsigned long HOLD_DURATION;
 unsigned long lastBlinkTime = 0;
 const unsigned long BLINK_INTERVAL = 1000;
 bool blinkState = false;
@@ -2161,46 +2171,56 @@ void handleOneClickLight() {
 void checkoverride1() {
     bool currentReading = (digitalRead(switch1Pin) == LOW);
     
-    if ((millis() - lastSwitch1Debounce) > DEBOUNCE_DELAY) {
-        if (currentReading != overrideRelay1) {
-            lastSwitch1Debounce = millis();
-            overrideRelay1 = currentReading;
-            
-            if (overrideRelay1) {
-                if (!relay1State) {
-                    activateRelay(1, true);
-                }
-            } else {
-                if (relay1State) {
-                    deactivateRelay(1, true);
-                }
-            }
-            storeLogEntry("Relay 1 override changed to: " + String(overrideRelay1));
-            broadcastRelayStates();
+    if (currentReading != switch1LastState) {
+        if (currentReading) {
+            switch1PressStartTime = millis();
         }
+        switch1LastState = currentReading;
+    }
+    
+    if (currentReading && !overrideRelay1 && 
+        (millis() - switch1PressStartTime >= HOLD_DURATION)) {
+        overrideRelay1 = true;
+        if (!relay1State) {
+            activateRelay(1, true);
+        }
+        storeLogEntry("Relay 1 override activated");
+        broadcastRelayStates();
+    } else if (!currentReading && overrideRelay1) {
+        overrideRelay1 = false;
+        if (relay1State) {
+            deactivateRelay(1, true);
+        }
+        storeLogEntry("Relay 1 override deactivated");
+        broadcastRelayStates();
     }
 }
 
 void checkoverride2() {
     bool currentReading = (digitalRead(switch2Pin) == LOW);
     
-    if ((millis() - lastSwitch2Debounce) > DEBOUNCE_DELAY) {
-        if (currentReading != overrideRelay2) {
-            lastSwitch2Debounce = millis();
-            overrideRelay2 = currentReading;
-            
-            if (overrideRelay2) {
-                if (!relay2State) {
-                    activateRelay(2, true);
-                }
-            } else {
-                if (relay2State) {
-                    deactivateRelay(2, true);
-                }
-            }
-            storeLogEntry("Relay 2 override changed to: " + String(overrideRelay2));
-            broadcastRelayStates();
+    if (currentReading != switch2LastState) {
+        if (currentReading) {
+            switch2PressStartTime = millis();
         }
+        switch2LastState = currentReading;
+    }
+    
+    if (currentReading && !overrideRelay2 && 
+        (millis() - switch2PressStartTime >= HOLD_DURATION)) {
+        overrideRelay2 = true;
+        if (!relay2State) {
+            activateRelay(2, true);
+        }
+        storeLogEntry("Relay 2 override activated");
+        broadcastRelayStates();
+    } else if (!currentReading && overrideRelay2) {
+        overrideRelay2 = false;
+        if (relay2State) {
+            deactivateRelay(2, true);
+        }
+        storeLogEntry("Relay 2 override deactivated");
+        broadcastRelayStates();
     }
 }
 
