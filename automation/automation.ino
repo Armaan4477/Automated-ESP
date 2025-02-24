@@ -10,29 +10,30 @@
 #include <Ticker.h>
 #include <TimeLib.h>
 #include <FS.h>
+#include <ESP_Mail_Client.h>
 
 struct Schedule {
-    int id;
-    int relayNumber;
-    int onHour;
-    int onMinute;
-    int offHour;
-    int offMinute;
-    bool enabled;
-    bool daysOfWeek[7]; 
+  int id;
+  int relayNumber;
+  int onHour;
+  int onMinute;
+  int offHour;
+  int offMinute;
+  bool enabled;
+  bool daysOfWeek[7];
 };
 
 struct LogEntry {
-    unsigned long id;
-    String timestamp;
-    String message;
+  unsigned long id;
+  String timestamp;
+  String message;
 };
 
-const int relay1 = 5;  // D1
-const int relay2 = 4;  // D2
-const int switch1Pin = 14; // D5
-const int switch2Pin = 12; // D6
-const int errorLEDPin = 13; // D7
+const int relay1 = 5;        // D1
+const int relay2 = 4;        // D2
+const int switch1Pin = 14;   // D5
+const int switch2Pin = 12;   // D6
+const int errorLEDPin = 13;  // D7
 
 bool overrideRelay1 = false;
 bool overrideRelay2 = false;
@@ -72,14 +73,14 @@ const int SCHEDULE_SIZE = sizeof(Schedule);
 const int MAX_SCHEDULES = 10;
 const int SCHEDULE_START_ADDR = 0;
 const int TOGGLE_DELAY = 500;
-const int TOGGLE_COUNT = 3; 
+const int TOGGLE_COUNT = 3;
 const std::vector<String> allowedIPs = {
-    "192.168.29.3",//A Mac
-    "192.168.29.4",//A Ipad
-    "192.168.29.5",//A Moto
-    "192.168.29.6",//Acer
-    "192.168.29.9",//F Moto
-    "192.168.29.10"//N Vivo
+  "192.168.29.3",  //A Mac
+  "192.168.29.4",  //A Ipad
+  "192.168.29.5",  //A Moto
+  "192.168.29.6",  //Acer
+  "192.168.29.9",  //F Moto
+  "192.168.29.10"  //N Vivo
 };
 unsigned long lastSwitch1Debounce = 0;
 unsigned long lastSwitch2Debounce = 0;
@@ -100,7 +101,7 @@ bool blinkState = false;
 const char* authUsername = "admin";
 const char* authPassword = "12345678";
 
-const unsigned char favicon_png[] PROGMEM= {
+const unsigned char favicon_png[] PROGMEM = {
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40,
   0x08, 0x06, 0x00, 0x00, 0x00, 0xaa, 0x69, 0x71, 0xde, 0x00, 0x00, 0x00,
@@ -650,104 +651,113 @@ const unsigned char favicon_png[] PROGMEM= {
 
 const size_t favicon_png_len = sizeof(favicon_png);
 
+#define SMTP_HOST "smtp.gmail.com"
+#define SMTP_PORT 465
+const char* emailSenderAccount = "your-email@gmail.com";
+const char* emailSenderPassword = "your-app-specific-password";
+const char* emailRecipient = "recipient@email.com";
+const char* emailSubject = "Aquarium Control Logs";
+
+SMTPSession smtp;
+
 ESP8266WebServer server(80);
 
 WebSocketsServer webSocket = WebSocketsServer(81);
 
 void handleGetLogs() {
-    if (!spiffsInitialized) {
-        server.send(500, "application/json", "{\"error\":\"SPIFFS not initialized!\"}");
-        return;
-    }
+  if (!spiffsInitialized) {
+    server.send(500, "application/json", "{\"error\":\"SPIFFS not initialized!\"}");
+    return;
+  }
 
-    StaticJsonDocument<4096> doc;
-    doc.clear();
+  StaticJsonDocument<4096> doc;
+  doc.clear();
 
-    File file = SPIFFS.open("/logs.json", "r");
-    if (!file) {
-        server.send(404, "application/json", "{\"logs\":[]}");
-        return;
-    }
+  File file = SPIFFS.open("/logs.json", "r");
+  if (!file) {
+    server.send(404, "application/json", "{\"logs\":[]}");
+    return;
+  }
 
-    DeserializationError error = deserializeJson(doc, file);
-    file.close();
-    if (error) {
-        server.send(500, "application/json", "{\"error\":\"Failed to parse logs!\"}");
-        return;
-    }
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  if (error) {
+    server.send(500, "application/json", "{\"error\":\"Failed to parse logs!\"}");
+    return;
+  }
 
-    String response;
-    serializeJson(doc, response);
-    server.send(200, "application/json", response);
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
 }
 
 void storeLogEntry(const String& msg) {
-    Serial.println(msg);
-    const int MAX_LOGS = 35;
-    const int MAX_LOG_ID = 40;
+  Serial.println(msg);
+  const int MAX_LOGS = 18;
+  const int MAX_LOG_ID = 21;
 
-    if (!spiffsInitialized) return;
+  if (!spiffsInitialized) return;
 
-    unsigned long hours = ((epochTime % 86400L) / 3600);
-    unsigned long minutes = ((epochTime % 3600) / 60);
-    unsigned long seconds = (epochTime % 60);
+  unsigned long hours = ((epochTime % 86400L) / 3600);
+  unsigned long minutes = ((epochTime % 3600) / 60);
+  unsigned long seconds = (epochTime % 60);
 
-    int currentDay = day();
-    int currentMonth = month();
-    int currentYear = year();
+  int currentDay = day();
+  int currentMonth = month();
+  int currentYear = year();
 
-    char timeStr[20];
-    sprintf(timeStr, "%02d/%02d/%d %02lu:%02lu:%02lu", 
-            currentDay, currentMonth, currentYear,
-            hours, minutes, seconds);
+  char timeStr[20];
+  sprintf(timeStr, "%02d/%02d/%d %02lu:%02lu:%02lu",
+          currentDay, currentMonth, currentYear,
+          hours, minutes, seconds);
 
-    StaticJsonDocument<2048> doc;
-    doc.clear();
+  StaticJsonDocument<2048> doc;
+  doc.clear();
 
-    File file = SPIFFS.open("/logs.json", "r");
-    bool fileExists = file;
-    if (fileExists) {
-        DeserializationError error = deserializeJson(doc, file);
-        file.close();
-        
-        if (error) {
-            doc.clear();
-            doc.createNestedArray("logs");
-        }
-    } else {
-        doc.createNestedArray("logs");
+  File file = SPIFFS.open("/logs.json", "r");
+  bool fileExists = file;
+  if (fileExists) {
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+
+    if (error) {
+      doc.clear();
+      doc.createNestedArray("logs");
     }
+  } else {
+    doc.createNestedArray("logs");
+  }
 
-    JsonArray logs = doc["logs"].as<JsonArray>();
+  JsonArray logs = doc["logs"].as<JsonArray>();
 
-    if (logs.size() >= MAX_LOGS) {
-        logs.remove(0);
-    }
+  if (logs.size() >= MAX_LOGS) {
+    logs.remove(0);
+  }
 
-    if (logIdCounter >= MAX_LOG_ID) {
-        logIdCounter = 0;
-    }
+  if (logIdCounter >= MAX_LOG_ID) {
+    logIdCounter = 0;
+  }
 
-    JsonObject newLog = logs.createNestedObject();
-    newLog["id"] = logIdCounter++;
-    newLog["timestamp"] = timeStr;
-    newLog["message"] = msg;
+  JsonObject newLog = logs.createNestedObject();
+  newLog["id"] = logIdCounter++;
+  newLog["timestamp"] = timeStr;
+  newLog["message"] = msg;
 
-    File outFile = SPIFFS.open("/logs.json", "w");
-    if (outFile) {
-        serializeJson(doc, outFile);
-        outFile.close();
-    }
+  File outFile = SPIFFS.open("/logs.json", "w");
+  if (outFile) {
+    serializeJson(doc, outFile);
+    outFile.close();
+  }
 }
 
 void resetWatchdog() {
-    lastLoopTime = millis();
+  lastLoopTime = millis();
 }
 
 void checkWatchdog() {
-    if (millis() - lastLoopTime > watchdogTimeout) {
-        ESP.restart();
-    }
+  if (millis() - lastLoopTime > watchdogTimeout) {
+    ESP.restart();
+  }
 }
 
 unsigned int currentDay = 1;
@@ -756,166 +766,166 @@ unsigned int currentyear = 2023;
 bool validDateSync = false;
 
 void setup() {
-    digitalWrite(relay1, HIGH);
-    digitalWrite(relay2, HIGH);
-    pinMode(relay1, OUTPUT);
-    pinMode(relay2, OUTPUT);
-    pinMode(switch1Pin, INPUT_PULLUP);
-    pinMode(switch2Pin, INPUT_PULLUP);
-    
-    pinMode(errorLEDPin, OUTPUT);
-    digitalWrite(errorLEDPin, LOW);
+  digitalWrite(relay1, HIGH);
+  digitalWrite(relay2, HIGH);
+  pinMode(relay1, OUTPUT);
+  pinMode(relay2, OUTPUT);
+  pinMode(switch1Pin, INPUT_PULLUP);
+  pinMode(switch2Pin, INPUT_PULLUP);
 
-    if (!SPIFFS.begin()) {
-        storeLogEntry("Failed to mount FS");
-    } else {
-        spiffsInitialized = true;
-    }
-    
-    Serial.begin(115200);
-    WiFi.begin(ssid, password);
-    unsigned long wifiStartTime = millis();
-    const unsigned long wifiTimeout = 20000;
-    
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        
-        if (millis() - wifiStartTime > wifiTimeout) {
-            storeLogEntry("WiFi connection failed.");
-            indicateError();
-            break;
-        }
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-        storeLogEntry("Connected to WiFi");
-        storeLogEntry("IP Address: " + WiFi.localIP().toString());
-        clearError();
-    }
-    
-    timeClient.begin();
-    timeClient.setTimeOffset(19800);
-    
-    if (timeClient.update()) {
-        epochTime = timeClient.getEpochTime();
-        setTime(epochTime);
-        
-        currentDay = day();
-        currentMonth = month();
-        currentyear = year();
-        
-        lastNTPSync = millis();
-        validTimeSync = true;
-        validDateSync = true;
-        storeLogEntry("Time and Date sync successful");
-        clearError();
-    } else {
-        storeLogEntry("Time sync failed.");
-        indicateError();
-    }
+  pinMode(errorLEDPin, OUTPUT);
+  digitalWrite(errorLEDPin, LOW);
 
-    server.on("/", HTTP_GET, handleRoot);
-    server.on("/favicon.png", HTTP_GET, handleFavicon);
-    server.on("/logs", HTTP_GET, handleLogsPage);
-    server.on("/logs/data", HTTP_GET, handleGetLogs);
-    server.on("/relay/1", HTTP_ANY, handleRelay1);
-    server.on("/relay/2", HTTP_ANY, handleRelay2);
-    server.on("/time", HTTP_GET, handleTime);
-    server.on("/schedules", HTTP_GET, handleGetSchedules);
-    server.on("/schedule/add", HTTP_POST, handleAddSchedule);
-    server.on("/schedule/delete", HTTP_DELETE, handleDeleteSchedule);
-    server.on("/schedule/update", HTTP_POST, handleUpdateSchedule);
-    server.on("/relay/status", HTTP_GET, handleRelayStatus);
-    server.on("/error/clear", HTTP_POST, handleClearError);
-    server.on("/error/status", HTTP_GET, handleGetErrorStatus);
-    server.on("/relay/oneclick", HTTP_POST, handleOneClickLight);
-    server.begin();
-    EEPROM.begin(EEPROM_SIZE);
-    loadSchedulesFromEEPROM();
+  if (!SPIFFS.begin()) {
+    storeLogEntry("Failed to mount FS");
+  } else {
+    spiffsInitialized = true;
+  }
 
-    webSocket.begin();
-    webSocket.onEvent(webSocketEvent);
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  unsigned long wifiStartTime = millis();
+  const unsigned long wifiTimeout = 20000;
 
-    resetWatchdog();
-    watchdogTicker.attach(1, checkWatchdog);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+
+    if (millis() - wifiStartTime > wifiTimeout) {
+      storeLogEntry("WiFi connection failed.");
+      indicateError();
+      break;
+    }
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    storeLogEntry("Connected to WiFi");
+    storeLogEntry("IP Address: " + WiFi.localIP().toString());
+    clearError();
+  }
+
+  timeClient.begin();
+  timeClient.setTimeOffset(19800);
+
+  if (timeClient.update()) {
+    epochTime = timeClient.getEpochTime();
+    setTime(epochTime);
+
+    currentDay = day();
+    currentMonth = month();
+    currentyear = year();
+
+    lastNTPSync = millis();
+    validTimeSync = true;
+    validDateSync = true;
+    storeLogEntry("Time and Date sync successful");
+    clearError();
+  } else {
+    storeLogEntry("Time sync failed.");
+    indicateError();
+  }
+
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/favicon.png", HTTP_GET, handleFavicon);
+  server.on("/logs", HTTP_GET, handleLogsPage);
+  server.on("/logs/data", HTTP_GET, handleGetLogs);
+  server.on("/relay/1", HTTP_ANY, handleRelay1);
+  server.on("/relay/2", HTTP_ANY, handleRelay2);
+  server.on("/time", HTTP_GET, handleTime);
+  server.on("/schedules", HTTP_GET, handleGetSchedules);
+  server.on("/schedule/add", HTTP_POST, handleAddSchedule);
+  server.on("/schedule/delete", HTTP_DELETE, handleDeleteSchedule);
+  server.on("/schedule/update", HTTP_POST, handleUpdateSchedule);
+  server.on("/relay/status", HTTP_GET, handleRelayStatus);
+  server.on("/error/clear", HTTP_POST, handleClearError);
+  server.on("/error/status", HTTP_GET, handleGetErrorStatus);
+  server.on("/relay/oneclick", HTTP_POST, handleOneClickLight);
+  server.begin();
+  EEPROM.begin(EEPROM_SIZE);
+  loadSchedulesFromEEPROM();
+
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
+
+  resetWatchdog();
+  watchdogTicker.attach(1, checkWatchdog);
 }
 
 void indicateError() {
-    storeLogEntry("Error triggered.");
-    digitalWrite(errorLEDPin, HIGH);
-    hasError = true;
+  storeLogEntry("Error triggered.");
+  digitalWrite(errorLEDPin, HIGH);
+  hasError = true;
 }
 
 void clearError() {
-    storeLogEntry("Error cleared.");
-    digitalWrite(errorLEDPin, LOW);
-    hasError = false;
+  storeLogEntry("Error cleared.");
+  digitalWrite(errorLEDPin, LOW);
+  hasError = false;
 }
 
 void saveSchedulesToEEPROM() {
-    int addr = SCHEDULE_START_ADDR;
-    EEPROM.write(addr, schedules.size());
-    addr++;
-    
-    for(const Schedule& schedule : schedules) {
-        EEPROM.put(addr, schedule);
-        addr += SCHEDULE_SIZE;
-    }
-    EEPROM.commit();
+  int addr = SCHEDULE_START_ADDR;
+  EEPROM.write(addr, schedules.size());
+  addr++;
+
+  for (const Schedule& schedule : schedules) {
+    EEPROM.put(addr, schedule);
+    addr += SCHEDULE_SIZE;
+  }
+  EEPROM.commit();
 }
 
 void loadSchedulesFromEEPROM() {
-    schedules.clear();
-    int addr = SCHEDULE_START_ADDR;
-    int count = EEPROM.read(addr);
-    addr++;
-    
-    for(int i = 0; i < count && i < MAX_SCHEDULES; i++) {
-        Schedule schedule;
-        EEPROM.get(addr, schedule);
-        schedules.push_back(schedule);
-        addr += SCHEDULE_SIZE;
-    }
+  schedules.clear();
+  int addr = SCHEDULE_START_ADDR;
+  int count = EEPROM.read(addr);
+  addr++;
+
+  for (int i = 0; i < count && i < MAX_SCHEDULES; i++) {
+    Schedule schedule;
+    EEPROM.get(addr, schedule);
+    schedules.push_back(schedule);
+    addr += SCHEDULE_SIZE;
+  }
 }
 
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-    switch(type) {
-        case WStype_DISCONNECTED:
-            storeLogEntry("WebSocket " + String(num) + " Disconnected!");
-            break;
-        case WStype_CONNECTED: {
-            IPAddress ip = webSocket.remoteIP(num);
-            storeLogEntry("WebSocket " + String(num) + " Connected from " + ip.toString() + " url: " + String((char*)payload));
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
+  switch (type) {
+    case WStype_DISCONNECTED:
+      storeLogEntry("WebSocket " + String(num) + " Disconnected!");
+      break;
+    case WStype_CONNECTED:
+      {
+        IPAddress ip = webSocket.remoteIP(num);
+        storeLogEntry("WebSocket " + String(num) + " Connected from " + ip.toString() + " url: " + String((char*)payload));
 
-            
-            String message = "{\"relay1\":" + String(relay1State || overrideRelay1) +
-                             ",\"relay2\":" + String(relay2State || overrideRelay2) + "}";
-            webSocket.sendTXT(num, message);
-            }
-            break;
-        default:
-            break;
-    }
+
+        String message = "{\"relay1\":" + String(relay1State || overrideRelay1) + ",\"relay2\":" + String(relay2State || overrideRelay2) + "}";
+        webSocket.sendTXT(num, message);
+      }
+      break;
+    default:
+      break;
+  }
 }
 
 bool checkAuthentication() {
-    String clientIP = server.client().remoteIP().toString();
-    for (const auto& ip : allowedIPs) {
-        if (clientIP == ip) {
-            return true;
-        }
+  String clientIP = server.client().remoteIP().toString();
+  for (const auto& ip : allowedIPs) {
+    if (clientIP == ip) {
+      return true;
     }
-    if (!server.authenticate(authUsername, authPassword)) {
-        server.requestAuthentication();
-        return false;
-    }
-    return true;
+  }
+  if (!server.authenticate(authUsername, authPassword)) {
+    server.requestAuthentication();
+    return false;
+  }
+  return true;
 }
 
 void handleFavicon() {
-    server.sendHeader("Content-Length", String(favicon_png_len));
-    server.sendHeader("Cache-Control", "max-age=31536000");
-    server.send_P(200, "image/png", (char*)favicon_png, favicon_png_len);
+  server.sendHeader("Content-Length", String(favicon_png_len));
+  server.sendHeader("Cache-Control", "max-age=31536000");
+  server.send_P(200, "image/png", (char*)favicon_png, favicon_png_len);
 }
 
 const char mainPage[] PROGMEM = R"html(
@@ -1705,352 +1715,352 @@ const char logsPage[] PROGMEM = R"html(
 )html";
 
 void handleLogsPage() {
-    // Send the logs HTML from PROGMEM
-    server.send_P(200, "text/html", logsPage);
+  // Send the logs HTML from PROGMEM
+  server.send_P(200, "text/html", logsPage);
 }
 
 void loop() {
-    server.handleClient();
-    webSocket.loop();
-    resetWatchdog();
+  server.handleClient();
+  webSocket.loop();
+  resetWatchdog();
 
-    checkoverride1();
-    checkoverride2();
-    overrideLEDState();
+  checkoverride1();
+  checkoverride2();
+  overrideLEDState();
 
-    if (!validTimeSync) {
-        if (timeClient.update()) {
-            epochTime = timeClient.getEpochTime();
-            setTime(epochTime);
-            lastNTPSync = millis();
-            validTimeSync = true;
-            validDateSync = true;
-            storeLogEntry("Time sync successful (retry)");
-            clearError();
-        } else {
-             storeLogEntry("Time sync failed (retry).");
-            indicateError();
-        }
+  if (!validTimeSync) {
+    if (timeClient.update()) {
+      epochTime = timeClient.getEpochTime();
+      setTime(epochTime);
+      lastNTPSync = millis();
+      validTimeSync = true;
+      validDateSync = true;
+      storeLogEntry("Time sync successful (retry)");
+      clearError();
+    } else {
+      storeLogEntry("Time sync failed (retry).");
+      indicateError();
     }
+  }
 
-    unsigned long currentMillis = millis();
-    if (currentMillis - lastTimeUpdate >= 1000) {
-        epochTime++;
-        lastTimeUpdate = currentMillis;
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastTimeUpdate >= 1000) {
+    epochTime++;
+    lastTimeUpdate = currentMillis;
 
-        if (validTimeSync) {
-            checkSchedules();
-            
-            unsigned long currentSeconds = hour() * 3600 + minute() * 60 + second();
-            if (currentSeconds - last90MinCheck >= CHECK_90MIN_INTERVAL || 
-                (last90MinCheck > currentSeconds && currentSeconds >= 0)) {
-                
-                String timeStr = String(hour()) + ":" + 
-                              (minute() < 10 ? "0" : "") + String(minute());
-                
-                storeLogEntry("Device is powered onn at " + timeStr);
-                last90MinCheck = currentSeconds;
-            }
-            
-            int newDay = day();
-            if (newDay != currentDay) {
-                storeLogEntry("Day changed to: " + String(newDay));
-                currentDay = newDay;
-                last90MinCheck = 0;
-            }
-        }
+    if (validTimeSync) {
+      checkSchedules();
+
+      unsigned long currentSeconds = hour() * 3600 + minute() * 60 + second();
+      if (currentSeconds - last90MinCheck >= CHECK_90MIN_INTERVAL || (last90MinCheck > currentSeconds && currentSeconds >= 0)) {
+
+        String timeStr = String(hour()) + ":" + (minute() < 10 ? "0" : "") + String(minute());
+
+        storeLogEntry("Device is powered onn at " + timeStr);
+        last90MinCheck = currentSeconds;
+      }
+
+      int newDay = day();
+      if (newDay != currentDay) {
+        storeLogEntry("Day changed to: " + String(newDay));
+        currentDay = newDay;
+        last90MinCheck = 0;
+        sendEmailWithLogs("Day Change");
+      }
     }
+  }
 
-    if (!hasLaunchedSchedules && validTimeSync) {
-        checkScheduleslaunch();
-        storeLogEntry("Startup Schedule Check Success");
-        hasLaunchedSchedules = true;
+  if (!hasLaunchedSchedules && validTimeSync) {
+    checkScheduleslaunch();
+    storeLogEntry("Startup Schedule Check Success");
+    hasLaunchedSchedules = true;
+    if (WiFi.status() == WL_CONNECTED) {
+      delay(100);
+      sendEmailWithLogs("System Startup");
     }
+  }
 
-    yield();
+  yield();
 }
 
 void checkSchedules() {
-    unsigned long hours = ((epochTime % 86400L) / 3600);
-    unsigned long minutes = ((epochTime % 3600) / 60);
-    unsigned long seconds = (epochTime % 60);
-    int weekdayIndex = weekday() - 1;
-    
-    for (const Schedule& schedule : schedules) {
-        if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) continue;
-        
-        if (hours == schedule.onHour && minutes == schedule.onMinute && seconds == 0) {
-            bool currentState = (schedule.relayNumber == 1) ? relay1State : relay2State;
-            bool override = (schedule.relayNumber == 1) ? overrideRelay1 : overrideRelay2;
-            
-            if (!currentState && !override) {
-                activateRelay(schedule.relayNumber, false);
-            }
-        }
-        else if (hours == schedule.offHour && minutes == schedule.offMinute && seconds == 0) {
-            bool currentState = (schedule.relayNumber == 1) ? relay1State : relay2State;
-            bool override = (schedule.relayNumber == 1) ? overrideRelay1 : overrideRelay2;
-            
-            if (currentState && !override) {
-                deactivateRelay(schedule.relayNumber, false);
-            }
-        }
+  unsigned long hours = ((epochTime % 86400L) / 3600);
+  unsigned long minutes = ((epochTime % 3600) / 60);
+  unsigned long seconds = (epochTime % 60);
+  int weekdayIndex = weekday() - 1;
+
+  for (const Schedule& schedule : schedules) {
+    if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) continue;
+
+    if (hours == schedule.onHour && minutes == schedule.onMinute && seconds == 0) {
+      bool currentState = (schedule.relayNumber == 1) ? relay1State : relay2State;
+      bool override = (schedule.relayNumber == 1) ? overrideRelay1 : overrideRelay2;
+
+      if (!currentState && !override) {
+        activateRelay(schedule.relayNumber, false);
+      }
+    } else if (hours == schedule.offHour && minutes == schedule.offMinute && seconds == 0) {
+      bool currentState = (schedule.relayNumber == 1) ? relay1State : relay2State;
+      bool override = (schedule.relayNumber == 1) ? overrideRelay1 : overrideRelay2;
+
+      if (currentState && !override) {
+        deactivateRelay(schedule.relayNumber, false);
+      }
     }
+  }
 }
 
 void checkScheduleslaunch() {
-    unsigned long hours = ((epochTime % 86400L) / 3600);
-    unsigned long minutes = ((epochTime % 3600) / 60);
-    unsigned long currentTime = hours * 60 + minutes;
-    int weekdayIndex = weekday() - 1;
+  unsigned long hours = ((epochTime % 86400L) / 3600);
+  unsigned long minutes = ((epochTime % 3600) / 60);
+  unsigned long currentTime = hours * 60 + minutes;
+  int weekdayIndex = weekday() - 1;
 
-    bool relay1ShouldBeOn = false;
-    bool relay2ShouldBeOn = false;
+  bool relay1ShouldBeOn = false;
+  bool relay2ShouldBeOn = false;
 
-    for (const Schedule& schedule : schedules) {
-        if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) {
-            continue;
-        }
-
-        unsigned long onMinutes = schedule.onHour * 60 + schedule.onMinute;
-        unsigned long offMinutes = schedule.offHour * 60 + schedule.offMinute;
-
-        bool shouldBeOn = false;
-        if (offMinutes > onMinutes) {
-            shouldBeOn = (currentTime >= onMinutes && currentTime < offMinutes);
-        } else {
-            shouldBeOn = (currentTime >= onMinutes || currentTime < offMinutes);
-        }
-
-        if (schedule.relayNumber == 1) {
-            relay1ShouldBeOn |= shouldBeOn;
-        } else if (schedule.relayNumber == 2) {
-            relay2ShouldBeOn |= shouldBeOn;
-        }
+  for (const Schedule& schedule : schedules) {
+    if (!schedule.enabled || !schedule.daysOfWeek[weekdayIndex]) {
+      continue;
     }
 
-    if (!overrideRelay1) {
-        if (relay1ShouldBeOn) {
-            activateRelay(1, false);
-            storeLogEntry("Relay 1 activated by startup schedule check");
-        } else {
-            deactivateRelay(1, false);
-            storeLogEntry("Relay 1 deactivated by startup schedule check");
-        }
+    unsigned long onMinutes = schedule.onHour * 60 + schedule.onMinute;
+    unsigned long offMinutes = schedule.offHour * 60 + schedule.offMinute;
+
+    bool shouldBeOn = false;
+    if (offMinutes > onMinutes) {
+      shouldBeOn = (currentTime >= onMinutes && currentTime < offMinutes);
+    } else {
+      shouldBeOn = (currentTime >= onMinutes || currentTime < offMinutes);
     }
 
-    if (!overrideRelay2) {
-        if (relay2ShouldBeOn) {
-            activateRelay(2, false);
-            storeLogEntry("Relay 2 activated by startup schedule check");
-        } else {
-            deactivateRelay(2, false);
-            storeLogEntry("Relay 2 deactivated by startup schedule check");
-        }
+    if (schedule.relayNumber == 1) {
+      relay1ShouldBeOn |= shouldBeOn;
+    } else if (schedule.relayNumber == 2) {
+      relay2ShouldBeOn |= shouldBeOn;
     }
+  }
+
+  if (!overrideRelay1) {
+    if (relay1ShouldBeOn) {
+      activateRelay(1, false);
+      storeLogEntry("Relay 1 activated by startup schedule check");
+    } else {
+      deactivateRelay(1, false);
+      storeLogEntry("Relay 1 deactivated by startup schedule check");
+    }
+  }
+
+  if (!overrideRelay2) {
+    if (relay2ShouldBeOn) {
+      activateRelay(2, false);
+      storeLogEntry("Relay 2 activated by startup schedule check");
+    } else {
+      deactivateRelay(2, false);
+      storeLogEntry("Relay 2 deactivated by startup schedule check");
+    }
+  }
 }
 
 void activateRelay(int relayNum, bool manual) {
-    if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
-        storeLogEntry("Relay " + String(relayNum) + " is overridden. Activation skipped.");
-        return;
-    }
-    
-    switch(relayNum) {
-        case 1: 
-            digitalWrite(relay1, LOW); 
-            relay1State = true; 
-            storeLogEntry("Relay 1 activated.");
-            break;
-        case 2: 
-            toggleLightSequence();
-            storeLogEntry("Relay 2 activated with toggle sequence.");
-            break;
-    }
-    broadcastRelayStates();
+  if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
+    storeLogEntry("Relay " + String(relayNum) + " is overridden. Activation skipped.");
+    return;
+  }
+
+  switch (relayNum) {
+    case 1:
+      digitalWrite(relay1, LOW);
+      relay1State = true;
+      storeLogEntry("Relay 1 activated.");
+      break;
+    case 2:
+      toggleLightSequence();
+      storeLogEntry("Relay 2 activated with toggle sequence.");
+      break;
+  }
+  broadcastRelayStates();
 }
 
 void deactivateRelay(int relayNum, bool manual) {
-    if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
-        storeLogEntry("Relay " + String(relayNum) + " is overridden. Deactivation skipped.");
-        return;
-    }
-    
-    switch(relayNum) {
-        case 1: 
-            digitalWrite(relay1, HIGH); 
-            relay1State = false; 
-                storeLogEntry("Relay 1 deactivated.");
-            break;
-        case 2: 
-            digitalWrite(relay2, HIGH); 
-            relay2State = false; 
-            storeLogEntry("Relay 2 deactivated.");
-            break;
-    }
-    broadcastRelayStates();
+  if (!manual && ((relayNum == 1 && overrideRelay1) || (relayNum == 2 && overrideRelay2))) {
+    storeLogEntry("Relay " + String(relayNum) + " is overridden. Deactivation skipped.");
+    return;
+  }
+
+  switch (relayNum) {
+    case 1:
+      digitalWrite(relay1, HIGH);
+      relay1State = false;
+      storeLogEntry("Relay 1 deactivated.");
+      break;
+    case 2:
+      digitalWrite(relay2, HIGH);
+      relay2State = false;
+      storeLogEntry("Relay 2 deactivated.");
+      break;
+  }
+  broadcastRelayStates();
 }
 
 void broadcastRelayStates() {
-    String message = "{\"relay1\":" + String(relay1State || overrideRelay1) +
-                     ",\"relay2\":" + String(relay2State || overrideRelay2) + "}";
-    webSocket.broadcastTXT(message);
+  String message = "{\"relay1\":" + String(relay1State || overrideRelay1) + ",\"relay2\":" + String(relay2State || overrideRelay2) + "}";
+  webSocket.broadcastTXT(message);
 }
 
 void handleGetSchedules() {
-    String json = "[";
-    for (size_t i = 0; i < schedules.size(); i++) {
-        if (i > 0) json += ",";
-        const Schedule &s = schedules[i];
-        json += "{";
-        json += "\"id\":" + String(i) + ",";
-        json += "\"relay\":" + String(s.relayNumber) + ",";
-        json += "\"onHour\":" + String(s.onHour) + ",";
-        json += "\"onMinute\":" + String(s.onMinute) + ",";
-        json += "\"offHour\":" + String(s.offHour) + ",";
-        json += "\"offMinute\":" + String(s.offMinute) + ",";
-        json += "\"enabled\":" + String(s.enabled ? "true" : "false") + ",";
-        json += "\"daysOfWeek\":[";
-        for (int d = 0; d < 7; d++) {
-            if (d > 0) json += ",";
-            json += (s.daysOfWeek[d] ? "true" : "false");
-        }
-        json += "]";
-        json += "}";
+  String json = "[";
+  for (size_t i = 0; i < schedules.size(); i++) {
+    if (i > 0) json += ",";
+    const Schedule& s = schedules[i];
+    json += "{";
+    json += "\"id\":" + String(i) + ",";
+    json += "\"relay\":" + String(s.relayNumber) + ",";
+    json += "\"onHour\":" + String(s.onHour) + ",";
+    json += "\"onMinute\":" + String(s.onMinute) + ",";
+    json += "\"offHour\":" + String(s.offHour) + ",";
+    json += "\"offMinute\":" + String(s.offMinute) + ",";
+    json += "\"enabled\":" + String(s.enabled ? "true" : "false") + ",";
+    json += "\"daysOfWeek\":[";
+    for (int d = 0; d < 7; d++) {
+      if (d > 0) json += ",";
+      json += (s.daysOfWeek[d] ? "true" : "false");
     }
     json += "]";
-    server.send(200, "application/json", json);
+    json += "}";
+  }
+  json += "]";
+  server.send(200, "application/json", json);
 }
 
 void handleAddSchedule() {
-    if (server.hasArg("plain")) {
-        String body = server.arg("plain");
-        StaticJsonDocument<300> doc;
-        DeserializationError error = deserializeJson(doc, body);
-        
-        if (!error) {
-            if (!doc.containsKey("relay") || !doc.containsKey("onTime") || !doc.containsKey("offTime") ||
-                doc["relay"].isNull() || doc["onTime"].isNull() || doc["offTime"].isNull()) {
-                server.send(400, "application/json", "{\"error\":\"Missing relay, onTime, or offTime\"}");
-                 storeLogEntry("Add Schedule failed: Missing fields.");
-                return;
-            }
+  if (server.hasArg("plain")) {
+    String body = server.arg("plain");
+    StaticJsonDocument<300> doc;
+    DeserializationError error = deserializeJson(doc, body);
 
-            Schedule newSchedule;
-            newSchedule.id = schedules.size();
-            newSchedule.relayNumber = doc["relay"].as<int>();
-            String onTime = doc["onTime"].as<String>();
-            String offTime = doc["offTime"].as<String>();
+    if (!error) {
+      if (!doc.containsKey("relay") || !doc.containsKey("onTime") || !doc.containsKey("offTime") || doc["relay"].isNull() || doc["onTime"].isNull() || doc["offTime"].isNull()) {
+        server.send(400, "application/json", "{\"error\":\"Missing relay, onTime, or offTime\"}");
+        storeLogEntry("Add Schedule failed: Missing fields.");
+        return;
+      }
 
-            if (onTime.length() < 5 || offTime.length() < 5) {
-                server.send(400, "application/json", "{\"error\":\"Invalid time format\"}");
-                storeLogEntry("Add Schedule failed: Invalid time format.");
-                return;
-            }
+      Schedule newSchedule;
+      newSchedule.id = schedules.size();
+      newSchedule.relayNumber = doc["relay"].as<int>();
+      String onTime = doc["onTime"].as<String>();
+      String offTime = doc["offTime"].as<String>();
 
-            newSchedule.onHour = onTime.substring(0, 2).toInt();
-            newSchedule.onMinute = onTime.substring(3).toInt();
-            newSchedule.offHour = offTime.substring(0, 2).toInt();
-            newSchedule.offMinute = offTime.substring(3).toInt();
-            newSchedule.enabled = true;
-            
-            for (int i = 0; i < 7; i++) {
-                newSchedule.daysOfWeek[i] = doc["days"][i] | false;
+      if (onTime.length() < 5 || offTime.length() < 5) {
+        server.send(400, "application/json", "{\"error\":\"Invalid time format\"}");
+        storeLogEntry("Add Schedule failed: Invalid time format.");
+        return;
+      }
+
+      newSchedule.onHour = onTime.substring(0, 2).toInt();
+      newSchedule.onMinute = onTime.substring(3).toInt();
+      newSchedule.offHour = offTime.substring(0, 2).toInt();
+      newSchedule.offMinute = offTime.substring(3).toInt();
+      newSchedule.enabled = true;
+
+      for (int i = 0; i < 7; i++) {
+        newSchedule.daysOfWeek[i] = doc["days"][i] | false;
+      }
+
+      bool conflict = false;
+      for (const Schedule& existing : schedules) {
+        if (existing.relayNumber == newSchedule.relayNumber && existing.enabled) {
+          bool shareDay = false;
+          for (int i = 0; i < 7; i++) {
+            if (newSchedule.daysOfWeek[i] && existing.daysOfWeek[i]) {
+              shareDay = true;
+              break;
             }
-            
-            bool conflict = false;
-            for (const Schedule& existing : schedules) {
-                if (existing.relayNumber == newSchedule.relayNumber && existing.enabled) {
-                    bool shareDay = false;
-                    for (int i = 0; i < 7; i++) {
-                        if (newSchedule.daysOfWeek[i] && existing.daysOfWeek[i]) {
-                            shareDay = true;
-                            break;
-                        }
-                    }
-                    if (!shareDay) {
-                        continue;
-                    }
-                    int existingStart = existing.onHour * 60 + existing.onMinute;
-                    int existingEnd = existing.offHour * 60 + existing.offMinute;
-                    int newStart = newSchedule.onHour * 60 + newSchedule.onMinute;
-                    int newEnd = newSchedule.offHour * 60 + newSchedule.offMinute;
-                    
-                    if (existingEnd <= existingStart) existingEnd += 1440;
-                    if (newEnd <= newStart) newEnd += 1440;
-                    
-                    if ((newStart < existingEnd) && (existingStart < newEnd)) {
-                        conflict = true;
-                        break;
-                    }
-                }
-            }
-            
-            if (conflict) {
-                server.send(409, "application/json", "{\"error\":\"Schedule conflict detected\"}");
-                 storeLogEntry("Schedule conflict detected for relay " + String(newSchedule.relayNumber));
-                return;
-            }
-            
-            schedules.push_back(newSchedule);
-            saveSchedulesToEEPROM(); 
-            server.send(200, "application/json", "{\"status\":\"success\"}");
-            clearError();
-            broadcastRelayStates();
-            return;
+          }
+          if (!shareDay) {
+            continue;
+          }
+          int existingStart = existing.onHour * 60 + existing.onMinute;
+          int existingEnd = existing.offHour * 60 + existing.offMinute;
+          int newStart = newSchedule.onHour * 60 + newSchedule.onMinute;
+          int newEnd = newSchedule.offHour * 60 + newSchedule.offMinute;
+
+          if (existingEnd <= existingStart) existingEnd += 1440;
+          if (newEnd <= newStart) newEnd += 1440;
+
+          if ((newStart < existingEnd) && (existingStart < newEnd)) {
+            conflict = true;
+            break;
+          }
         }
-        indicateError();
+      }
+
+      if (conflict) {
+        server.send(409, "application/json", "{\"error\":\"Schedule conflict detected\"}");
+        storeLogEntry("Schedule conflict detected for relay " + String(newSchedule.relayNumber));
+        return;
+      }
+
+      schedules.push_back(newSchedule);
+      saveSchedulesToEEPROM();
+      server.send(200, "application/json", "{\"status\":\"success\"}");
+      clearError();
+      broadcastRelayStates();
+      return;
     }
-    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
+    indicateError();
+  }
+  server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
 }
 
 void handleDeleteSchedule() {
-    if (server.hasArg("id")) {
-        int id = server.arg("id").toInt();
-         storeLogEntry("Delete request for schedule ID: " + String(id));
-        
-        if (id >= 0 && id < schedules.size()) {
-            schedules.erase(schedules.begin() + id);
-            saveSchedulesToEEPROM();
-             storeLogEntry("Schedule deleted successfully");
-            server.send(200, "application/json", "{\"status\":\"success\"}");
-            clearError();
-            broadcastRelayStates();
-            return;
-        }
-        indicateError();
+  if (server.hasArg("id")) {
+    int id = server.arg("id").toInt();
+    storeLogEntry("Delete request for schedule ID: " + String(id));
+
+    if (id >= 0 && id < schedules.size()) {
+      schedules.erase(schedules.begin() + id);
+      saveSchedulesToEEPROM();
+      storeLogEntry("Schedule deleted successfully");
+      server.send(200, "application/json", "{\"status\":\"success\"}");
+      clearError();
+      broadcastRelayStates();
+      return;
     }
-     storeLogEntry("Invalid delete request");
-    server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
+    indicateError();
+  }
+  storeLogEntry("Invalid delete request");
+  server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
 }
 
 void handleUpdateSchedule() {
-    if (server.hasArg("plain")) {
-        String body = server.arg("plain");
-        StaticJsonDocument<200> doc;
-        DeserializationError error = deserializeJson(doc, body);
-        
-        if (!error) {
-            int id = doc["id"];
-            bool enabled = doc["enabled"];
-            
-            if (id >= 0 && id < schedules.size()) {
-                schedules[id].enabled = enabled;
-                saveSchedulesToEEPROM();
-                server.send(200, "application/json", "{\"status\":\"success\"}");
-                 storeLogEntry("Schedule ID " + String(id) + " " + String(enabled ? "activated." : "deactivated."));
-                clearError();
-                broadcastRelayStates();
-                return;
-            } else {
-                server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
-                    storeLogEntry("Invalid schedule update request for ID: " + String(id));
-                indicateError();
-                return;
-            }
-        }
+  if (server.hasArg("plain")) {
+    String body = server.arg("plain");
+    StaticJsonDocument<200> doc;
+    DeserializationError error = deserializeJson(doc, body);
+
+    if (!error) {
+      int id = doc["id"];
+      bool enabled = doc["enabled"];
+
+      if (id >= 0 && id < schedules.size()) {
+        schedules[id].enabled = enabled;
+        saveSchedulesToEEPROM();
+        server.send(200, "application/json", "{\"status\":\"success\"}");
+        storeLogEntry("Schedule ID " + String(id) + " " + String(enabled ? "activated." : "deactivated."));
+        clearError();
+        broadcastRelayStates();
+        return;
+      } else {
+        server.send(400, "application/json", "{\"error\":\"Invalid schedule ID\"}");
+        storeLogEntry("Invalid schedule update request for ID: " + String(id));
+        indicateError();
+        return;
+      }
     }
-    server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
+  }
+  server.send(400, "application/json", "{\"error\":\"Invalid request\"}");
 }
 
 void handleRoot() {
@@ -2059,189 +2069,267 @@ void handleRoot() {
   server.send_P(200, "text/html", mainPage);
 }
 
-void toggleRelay(int relayPin, bool &relayState) {
-    if ((relayPin == relay1 && overrideRelay1) || (relayPin == relay2 && overrideRelay2)) {
-         storeLogEntry("Physical override active, ignoring toggle.");
-        return;
-    }
-    relayState = !relayState;
-    digitalWrite(relayPin, relayState ? LOW : HIGH);
-     storeLogEntry("Relay state changed to: " + String(relayState));
-    broadcastRelayStates();
+void toggleRelay(int relayPin, bool& relayState) {
+  if ((relayPin == relay1 && overrideRelay1) || (relayPin == relay2 && overrideRelay2)) {
+    storeLogEntry("Physical override active, ignoring toggle.");
+    return;
+  }
+  relayState = !relayState;
+  digitalWrite(relayPin, relayState ? LOW : HIGH);
+  storeLogEntry("Relay state changed to: " + String(relayState));
+  broadcastRelayStates();
 }
 
 void handleRelay1() {
-    if (server.method() == HTTP_POST) {
-        if (overrideRelay1) {
-            server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
-            return;
-        }
-        toggleRelay(relay1, relay1State);
-        server.send(200, "application/json", "{\"state\":" + String(relay1State) + "}");
-    } else if (server.method() == HTTP_GET) {
-        server.send(200, "application/json", "{\"state\":" + String(relay1State) + "}");
+  if (server.method() == HTTP_POST) {
+    if (overrideRelay1) {
+      server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
+      return;
     }
+    toggleRelay(relay1, relay1State);
+    server.send(200, "application/json", "{\"state\":" + String(relay1State) + "}");
+  } else if (server.method() == HTTP_GET) {
+    server.send(200, "application/json", "{\"state\":" + String(relay1State) + "}");
+  }
 }
 
 void handleRelay2() {
-    if (server.method() == HTTP_POST) {
-        if (overrideRelay2) {
-            server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
-            return;
-        }
-        
-        if (!relay2State) {
-            toggleLightSequence();
-        } else {
-            digitalWrite(relay2, HIGH);
-            relay2State = false;
-            storeLogEntry("Relay 2 deactivated.");
-        }
-        
-        server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
-        broadcastRelayStates();
-    } else if (server.method() == HTTP_GET) {
-        server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
+  if (server.method() == HTTP_POST) {
+    if (overrideRelay2) {
+      server.send(403, "application/json", "{\"error\":\"Physical override active\"}");
+      return;
     }
+
+    if (!relay2State) {
+      toggleLightSequence();
+    } else {
+      digitalWrite(relay2, HIGH);
+      relay2State = false;
+      storeLogEntry("Relay 2 deactivated.");
+    }
+
+    server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
+    broadcastRelayStates();
+  } else if (server.method() == HTTP_GET) {
+    server.send(200, "application/json", "{\"state\":" + String(relay2State) + "}");
+  }
 }
 
 void toggleLightSequence() {
-    for(int i = 0; i < TOGGLE_COUNT; i++) {
-        digitalWrite(relay2, HIGH);
-        delay(TOGGLE_DELAY);
-        digitalWrite(relay2, LOW);
-        delay(TOGGLE_DELAY);
-    }
+  for (int i = 0; i < TOGGLE_COUNT; i++) {
+    digitalWrite(relay2, HIGH);
+    delay(TOGGLE_DELAY);
     digitalWrite(relay2, LOW);
-    relay2State = true;
-    storeLogEntry("Light relay toggled sequence completed");
-    broadcastRelayStates();
+    delay(TOGGLE_DELAY);
+  }
+  digitalWrite(relay2, LOW);
+  relay2State = true;
+  storeLogEntry("Light relay toggled sequence completed");
+  broadcastRelayStates();
 }
 
 void handleTime() {
-    unsigned long currentEpoch = epochTime;
+  unsigned long currentEpoch = epochTime;
 
-    setTime(currentEpoch);
+  setTime(currentEpoch);
 
-    int currentYearVal = year();
-    int currentMonthVal = month();
-    int currentDayVal = day();
-    
-    int currentWeekday = weekday();
-    const char* daysOfWeek[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-    String currentDayName = daysOfWeek[currentWeekday - 1];
+  int currentYearVal = year();
+  int currentMonthVal = month();
+  int currentDayVal = day();
 
-    String formattedTime = String(hour()) + ":" + 
-                           (minute() < 10 ? "0" : "") + String(minute()) + ":" + 
-                           (second() < 10 ? "0" : "") + String(second());
-    String formattedDate = String(currentDayVal) + "/" + String(currentMonthVal) + "/" + String(currentYearVal);
-    String response = formattedTime + " " + currentDayName + " " + formattedDate;
-    server.send(200, "text/plain", response);
+  int currentWeekday = weekday();
+  const char* daysOfWeek[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+  String currentDayName = daysOfWeek[currentWeekday - 1];
+
+  String formattedTime = String(hour()) + ":" + (minute() < 10 ? "0" : "") + String(minute()) + ":" + (second() < 10 ? "0" : "") + String(second());
+  String formattedDate = String(currentDayVal) + "/" + String(currentMonthVal) + "/" + String(currentYearVal);
+  String response = formattedTime + " " + currentDayName + " " + formattedDate;
+  server.send(200, "text/plain", response);
 }
 
 void handleRelayStatus() {
-    String json = "{";
-    json += "\"1\":" + String(relay1State || overrideRelay1) + ","; 
-    json += "\"2\":" + String(relay2State || overrideRelay2) + "}";
-    server.send(200, "application/json", json);
+  String json = "{";
+  json += "\"1\":" + String(relay1State || overrideRelay1) + ",";
+  json += "\"2\":" + String(relay2State || overrideRelay2) + "}";
+  server.send(200, "application/json", json);
 }
 
 void handleClearError() {
-    clearError();
-    server.send(200, "application/json", "{\"status\":\"success\"}");
+  clearError();
+  server.send(200, "application/json", "{\"status\":\"success\"}");
 }
 
 void handleGetErrorStatus() {
-    String json = "{\"hasError\":" + String(hasError ? "true" : "false") + "}";
-    server.send(200, "application/json", json);
+  String json = "{\"hasError\":" + String(hasError ? "true" : "false") + "}";
+  server.send(200, "application/json", json);
 }
 
 void handleOneClickLight() {
-    if (relay2State || overrideRelay2) {
-        digitalWrite(relay2, HIGH);
-        relay2State = false;
-        delay(500);
-        digitalWrite(relay2, LOW);
-        relay2State = true;
-        server.send(200, "application/json", "{\"status\":\"success\"}");
-         storeLogEntry("Relay 2 toggled off-on via One Click.");
-    } else {
-        server.send(403, "application/json", "{\"error\":\"Light is off\"}");
-         storeLogEntry("One Click failed: Light is off.");
-    }
+  if (relay2State || overrideRelay2) {
+    digitalWrite(relay2, HIGH);
+    relay2State = false;
+    delay(500);
+    digitalWrite(relay2, LOW);
+    relay2State = true;
+    server.send(200, "application/json", "{\"status\":\"success\"}");
+    storeLogEntry("Relay 2 toggled off-on via One Click.");
+  } else {
+    server.send(403, "application/json", "{\"error\":\"Light is off\"}");
+    storeLogEntry("One Click failed: Light is off.");
+  }
 }
 
 void checkoverride1() {
-    bool currentReading = (digitalRead(switch1Pin) == LOW);
-    
-    if (currentReading != switch1LastState) {
-        if (currentReading) {
-            switch1PressStartTime = millis();
-        }
-        switch1LastState = currentReading;
+  bool currentReading = (digitalRead(switch1Pin) == LOW);
+
+  if (currentReading != switch1LastState) {
+    if (currentReading) {
+      switch1PressStartTime = millis();
     }
-    
-    if (currentReading && !overrideRelay1 && 
-        (millis() - switch1PressStartTime >= HOLD_DURATION)) {
-        overrideRelay1 = true;
-        if (!relay1State) {
-            activateRelay(1, true);
-        }
-        storeLogEntry("Relay 1 override activated");
-        broadcastRelayStates();
-    } else if (!currentReading && overrideRelay1) {
-        overrideRelay1 = false;
-        if (relay1State) {
-            deactivateRelay(1, true);
-        }
-        storeLogEntry("Relay 1 override deactivated");
-        broadcastRelayStates();
+    switch1LastState = currentReading;
+  }
+
+  if (currentReading && !overrideRelay1 && (millis() - switch1PressStartTime >= HOLD_DURATION)) {
+    overrideRelay1 = true;
+    if (!relay1State) {
+      activateRelay(1, true);
     }
+    storeLogEntry("Relay 1 override activated");
+    broadcastRelayStates();
+  } else if (!currentReading && overrideRelay1) {
+    overrideRelay1 = false;
+    if (relay1State) {
+      deactivateRelay(1, true);
+    }
+    storeLogEntry("Relay 1 override deactivated");
+    broadcastRelayStates();
+  }
 }
 
 void checkoverride2() {
-    bool currentReading = (digitalRead(switch2Pin) == LOW);
-    
-    if (currentReading != switch2LastState) {
-        if (currentReading) {
-            switch2PressStartTime = millis();
-        }
-        switch2LastState = currentReading;
+  bool currentReading = (digitalRead(switch2Pin) == LOW);
+
+  if (currentReading != switch2LastState) {
+    if (currentReading) {
+      switch2PressStartTime = millis();
     }
-    
-    if (currentReading && !overrideRelay2 && 
-        (millis() - switch2PressStartTime >= HOLD_DURATION)) {
-        overrideRelay2 = true;
-        if (!relay2State) {
-            activateRelay(2, true);
-        }
-        storeLogEntry("Relay 2 override activated");
-        broadcastRelayStates();
-    } else if (!currentReading && overrideRelay2) {
-        overrideRelay2 = false;
-        if (relay2State) {
-            deactivateRelay(2, true);
-        }
-        storeLogEntry("Relay 2 override deactivated");
-        broadcastRelayStates();
+    switch2LastState = currentReading;
+  }
+
+  if (currentReading && !overrideRelay2 && (millis() - switch2PressStartTime >= HOLD_DURATION)) {
+    overrideRelay2 = true;
+    if (!relay2State) {
+      activateRelay(2, true);
     }
+    storeLogEntry("Relay 2 override activated");
+    broadcastRelayStates();
+  } else if (!currentReading && overrideRelay2) {
+    overrideRelay2 = false;
+    if (relay2State) {
+      deactivateRelay(2, true);
+    }
+    storeLogEntry("Relay 2 override deactivated");
+    broadcastRelayStates();
+  }
 }
 
 void overrideLEDState() {
-    bool anyOverrideActive = overrideRelay1 || overrideRelay2;
+  bool anyOverrideActive = overrideRelay1 || overrideRelay2;
 
-    if (hasError) {
-        return;
+  if (hasError) {
+    return;
+  }
+
+  if (anyOverrideActive) {
+    if (millis() - lastBlinkTime >= BLINK_INTERVAL) {
+      lastBlinkTime = millis();
+      blinkState = !blinkState;
+      digitalWrite(errorLEDPin, blinkState);
     }
-    
-    if (anyOverrideActive) {
-        if (millis() - lastBlinkTime >= BLINK_INTERVAL) {
-            lastBlinkTime = millis();
-            blinkState = !blinkState;
-            digitalWrite(errorLEDPin, blinkState);
-        }
-    } else {
-        digitalWrite(errorLEDPin, LOW);
-        blinkState = false;
-    }
+  } else {
+    digitalWrite(errorLEDPin, LOW);
+    blinkState = false;
+  }
+}
+
+void sendEmailWithLogs(const String& trigger) {
+  if (!WiFi.isConnected()) {
+    storeLogEntry("Failed to send email: No WiFi connection");
+    return;
+  }
+
+  if (!SPIFFS.exists("/logs.json")) {
+    storeLogEntry("Failed to send email: logs.json does not exist");
+    return;
+  }
+
+  MailClient.networkReconnect(true);
+  smtp.debug(1);  // Enable debug output
+
+  Session_Config config;
+  config.server.host_name = SMTP_HOST;
+  config.server.port = SMTP_PORT;
+  config.login.email = emailSenderAccount;
+  config.login.password = emailSenderPassword;
+  config.login.user_domain = "";
+
+  SMTP_Message message;
+  message.sender.name = "Aquarium Control";
+  message.sender.email = emailSenderAccount;
+  message.subject = String(emailSubject) + " - " + trigger;
+  message.addRecipient("User", emailRecipient);
+
+  String textMsg = "Aquarium Control System Report\n";
+  textMsg += "Event: " + trigger + "\n";
+  textMsg += "Timestamp: " + timeClient.getFormattedTime() + "\n\n";
+  textMsg += "System Status:\n";
+  textMsg += "Relay 1 (WaveMaker): " + String(relay1State ? "ON" : "OFF") + "\n";
+  textMsg += "Relay 2 (Light): " + String(relay2State ? "ON" : "OFF") + "\n";
+  textMsg += "Override 1: " + String(overrideRelay1 ? "Active" : "Inactive") + "\n";
+  textMsg += "Override 2: " + String(overrideRelay2 ? "Active" : "Inactive") + "\n";
+  textMsg += "Error Status: " + String(hasError ? "Error Present" : "No Errors") + "\n\n";
+  textMsg += "Full logs are attached as logs.json";
+
+  message.text.content = textMsg.c_str();
+  message.text.charSet = "us-ascii";
+  message.text.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+
+  // Read logs file content
+  File logsFile = SPIFFS.open("/logs.json", "r");
+  if (!logsFile) {
+    storeLogEntry("Failed to open logs file for email");
+    return;
+  }
+
+  String logsContent = "";
+  while (logsFile.available()) {
+    logsContent += (char)logsFile.read();
+  }
+  logsFile.close();
+
+  if (logsContent.length() == 0) {
+    storeLogEntry("Logs file is empty");
+    return;
+  }
+
+  SMTP_Attachment att;
+  att.descr.filename = "logs.json";
+  att.descr.mime = "application/json";
+  att.descr.transfer_encoding = Content_Transfer_Encoding::enc_base64;
+  att.blob.data = (uint8_t*)logsContent.c_str();
+  att.blob.size = logsContent.length();
+  message.addAttachment(att);
+
+  if (!smtp.connect(&config)) {
+    storeLogEntry("Failed to connect to email server");
+    return;
+  }
+
+  if (!MailClient.sendMail(&smtp, &message)) {
+    storeLogEntry("Failed to send email: " + smtp.errorReason());
+  } else {
+    storeLogEntry("Email sent successfully with logs");
+  }
+
+  smtp.closeSession();
 }
