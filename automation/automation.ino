@@ -50,7 +50,7 @@ WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "pool.ntp.org");
 Ticker watchdogTicker;
 unsigned long lastLoopTime = 0;
-const unsigned long watchdogTimeout = 5000;
+const unsigned long watchdogTimeout = 10000;
 unsigned long lastTimeUpdate = 0;
 const long timeUpdateInterval = 1000;
 unsigned long epochTime = 0;
@@ -670,7 +670,7 @@ void handleGetLogs() {
     return;
   }
 
-  StaticJsonDocument<4096> doc;
+  StaticJsonDocument<2352> doc;
   doc.clear();
 
   File file = SPIFFS.open("/logs.json", "r");
@@ -2265,6 +2265,7 @@ void sendEmailWithLogs(const String& trigger) {
 
   MailClient.networkReconnect(true);
   smtp.debug(1);  // Enable debug output
+  smtp.setTCPTimeout(10000);
 
   Session_Config config;
   config.server.host_name = SMTP_HOST;
