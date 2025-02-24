@@ -918,7 +918,7 @@ void handleFavicon() {
     server.send_P(200, "image/png", (char*)favicon_png, favicon_png_len);
 }
 
-const char* html = R"html(
+const char mainPage[] PROGMEM = R"html(
 <!DOCTYPE html>
 <html>
 <head>
@@ -1565,8 +1565,7 @@ const char* html = R"html(
 </html>
 )html";
 
-void handleLogsPage() {
-    const char* logsHtml = R"html(
+const char logsPage[] PROGMEM = R"html(
 <!DOCTYPE html>
 <html>
 <head>
@@ -1704,7 +1703,10 @@ void handleLogsPage() {
 </body>
 </html>
 )html";
-    server.send(200, "text/html", logsHtml);
+
+void handleLogsPage() {
+    // Send the logs HTML from PROGMEM
+    server.send_P(200, "text/html", logsPage);
 }
 
 void loop() {
@@ -2053,7 +2055,8 @@ void handleUpdateSchedule() {
 
 void handleRoot() {
   if (!checkAuthentication()) return;
-  server.send(200, "text/html", html);
+  // Send the HTML from PROGMEM
+  server.send_P(200, "text/html", mainPage);
 }
 
 void toggleRelay(int relayPin, bool &relayState) {
