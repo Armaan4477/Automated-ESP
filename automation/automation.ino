@@ -10,6 +10,7 @@
 #include <Ticker.h>
 #include <TimeLib.h>
 #include <FS.h>
+#include <ESP_Mail_Client.h>
 
 struct Schedule {
     int id;
@@ -650,6 +651,15 @@ const unsigned char favicon_png[] PROGMEM= {
 
 const size_t favicon_png_len = sizeof(favicon_png);
 
+#define SMTP_HOST "smtp.gmail.com"
+#define SMTP_PORT 465
+const char* emailSenderAccount = "your-email@gmail.com";
+const char* emailSenderPassword = "your-app-specific-password";
+const char* emailRecipient = "recipient@email.com";
+const char* emailSubject = "Aquarium Control Logs";
+
+SMTPSession smtp;
+
 ESP8266WebServer server(80);
 
 WebSocketsServer webSocket = WebSocketsServer(81);
@@ -683,8 +693,8 @@ void handleGetLogs() {
 
 void storeLogEntry(const String& msg) {
     Serial.println(msg);
-    const int MAX_LOGS = 35;
-    const int MAX_LOG_ID = 40;
+    const int MAX_LOGS = 18;
+    const int MAX_LOG_ID = 21;
 
     if (!spiffsInitialized) return;
 
@@ -1757,6 +1767,7 @@ void loop() {
                 storeLogEntry("Day changed to: " + String(newDay));
                 currentDay = newDay;
                 last90MinCheck = 0;
+                sendEmailWithLogs("Day Change");
             }
         }
     }
@@ -1765,6 +1776,10 @@ void loop() {
         checkScheduleslaunch();
         storeLogEntry("Startup Schedule Check Success");
         hasLaunchedSchedules = true;
+        if (WiFi.status() == WL_CONNECTED) {
+          delay(100);
+           sendEmailWithLogs("System Startup");
+        }
     }
 
     yield();
@@ -2244,4 +2259,86 @@ void overrideLEDState() {
         digitalWrite(errorLEDPin, LOW);
         blinkState = false;
     }
+}
+
+void sendEmailWithLogs(const String& trigger) {
+    if (!WiFi.isConnected()) {
+        storeLogEntry("Failed to send email: No WiFi connection");
+        return;
+    }
+
+    if (!SPIFFS.exists("/logs.json")) {
+        storeLogEntry("Failed to send email: logs.json does not exist");
+        return;
+    }
+
+    MailClient.networkReconnect(true);
+    smtp.debug(1); // Enable debug output
+
+    Session_Config config;
+    config.server.host_name = SMTP_HOST;
+    config.server.port = SMTP_PORT;
+    config.login.email = emailSenderAccount;
+    config.login.password = emailSenderPassword;
+    config.login.user_domain = "";
+
+    SMTP_Message message;
+    message.sender.name = "Aquarium Control";
+    message.sender.email = emailSenderAccount;
+    message.subject = String(emailSubject) + " - " + trigger;
+    message.addRecipient("User", emailRecipient);
+
+    String textMsg = "Aquarium Control System Report\n";
+    textMsg += "Event: " + trigger + "\n";
+    textMsg += "Timestamp: " + timeClient.getFormattedTime() + "\n\n";
+    textMsg += "System Status:\n";
+    textMsg += "Relay 1 (WaveMaker): " + String(relay1State ? "ON" : "OFF") + "\n";
+    textMsg += "Relay 2 (Light): " + String(relay2State ? "ON" : "OFF") + "\n";
+    textMsg += "Override 1: " + String(overrideRelay1 ? "Active" : "Inactive") + "\n";
+    textMsg += "Override 2: " + String(overrideRelay2 ? "Active" : "Inactive") + "\n";
+    textMsg += "Error Status: " + String(hasError ? "Error Present" : "No Errors") + "\n\n";
+    textMsg += "Full logs are attached as logs.json";
+
+    message.text.content = textMsg.c_str();
+    message.text.charSet = "us-ascii";
+    message.text.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+
+    // Read logs file content
+    File logsFile = SPIFFS.open("/logs.json", "r");
+    if (!logsFile) {
+        storeLogEntry("Failed to open logs file for email");
+        return;
+    }
+
+    String logsContent = "";
+    while (logsFile.available()) {
+        logsContent += (char)logsFile.read();
+    }
+    logsFile.close();
+
+    if (logsContent.length() == 0) {
+        storeLogEntry("Logs file is empty");
+        return;
+    }
+
+    SMTP_Attachment att;
+    att.descr.filename = "logs.json";
+    att.descr.mime = "application/json";
+    att.descr.transfer_encoding = Content_Transfer_Encoding::enc_base64;
+    att.blob.data = (uint8_t*)logsContent.c_str();
+    att.blob.size = logsContent.length();
+    message.addAttachment(att);
+
+    if (!smtp.connect(&config)) {
+        storeLogEntry("Failed to connect to email server");
+        return;
+    }
+
+    if (!MailClient.sendMail(&smtp, &message)) {
+        storeLogEntry("Failed to send email: " + smtp.errorReason());
+    } else {
+        storeLogEntry("Email sent successfully with logs");
+    }
+
+    smtp.closeSession();
 }
