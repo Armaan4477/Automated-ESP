@@ -1,5 +1,5 @@
-#include <ESP8266WiFi.h>
-#include <ESP8266WebServer.h>
+#include <WiFi.h>
+#include <WebServer.h>
 #include <WebSocketsServer.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
@@ -9,7 +9,7 @@
 #include <string>
 #include <Ticker.h>
 #include <TimeLib.h>
-#include <FS.h>
+#include <SPIFFS.h>
 #include <ESP_Mail_Client.h>
 
 struct Schedule {
@@ -29,11 +29,11 @@ struct LogEntry {
   String message;
 };
 
-const int relay1 = 5;        // D1
-const int relay2 = 4;        // D2
-const int switch1Pin = 14;   // D5
-const int switch2Pin = 12;   // D6
-const int errorLEDPin = 13;  // D7
+const int relay1 = 16;
+const int relay2 = 17;
+const int switch1Pin = 23;
+const int switch2Pin = 22;
+const int errorLEDPin = 21;
 
 bool overrideRelay1 = false;
 bool overrideRelay2 = false;
@@ -62,6 +62,8 @@ unsigned long last90MinCheck = 0;
 const unsigned long CHECK_90MIN_INTERVAL = 5400;
 bool hasError = false;
 bool hasLaunchedSchedules = false;
+bool startupemail = true;
+bool pointemail = true;
 unsigned long logIdCounter = 0;
 std::vector<Schedule> schedules;
 void handleAddSchedule();
@@ -101,7 +103,7 @@ bool blinkState = false;
 const char* authUsername = "admin";
 const char* authPassword = "12345678";
 
-const unsigned char favicon_png[] PROGMEM = {
+const unsigned char favicon_png[] PROGMEM= {
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40,
   0x08, 0x06, 0x00, 0x00, 0x00, 0xaa, 0x69, 0x71, 0xde, 0x00, 0x00, 0x00,
@@ -660,7 +662,7 @@ const char* emailSubject = "Aquarium Control Logs";
 
 SMTPSession smtp;
 
-ESP8266WebServer server(80);
+WebServer server(80);
 
 WebSocketsServer webSocket = WebSocketsServer(81);
 
@@ -692,9 +694,9 @@ void handleGetLogs() {
 }
 
 void storeLogEntry(const String& msg) {
-  Serial.println(msg);
+  //Serial.println(msg);
   const int MAX_LOGS = 18;
-  const int MAX_LOG_ID = 21;
+  const int MAX_LOG_ID = 20;
 
   if (!spiffsInitialized) return;
 
@@ -765,24 +767,29 @@ unsigned int currentMonth = 1;
 unsigned int currentyear = 2023;
 bool validDateSync = false;
 
+TaskHandle_t networkTask;
+TaskHandle_t controlTask;
+
 void setup() {
-  digitalWrite(relay1, HIGH);
-  digitalWrite(relay2, HIGH);
   pinMode(relay1, OUTPUT);
   pinMode(relay2, OUTPUT);
   pinMode(switch1Pin, INPUT_PULLUP);
   pinMode(switch2Pin, INPUT_PULLUP);
-
   pinMode(errorLEDPin, OUTPUT);
+
+  digitalWrite(relay1, HIGH);
+  digitalWrite(relay2, HIGH);
   digitalWrite(errorLEDPin, LOW);
 
-  if (!SPIFFS.begin()) {
+  //Serial.begin(115200);
+
+  if (!SPIFFS.begin(true)) {
     storeLogEntry("Failed to mount FS");
   } else {
     spiffsInitialized = true;
   }
 
-  Serial.begin(115200);
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   unsigned long wifiStartTime = millis();
   const unsigned long wifiTimeout = 20000;
@@ -848,6 +855,26 @@ void setup() {
 
   resetWatchdog();
   watchdogTicker.attach(1, checkWatchdog);
+
+  xTaskCreatePinnedToCore(
+    emailLoop,
+    "emailTask",
+    8192,
+    NULL,
+    1,
+    &networkTask,
+    0
+  );
+
+  xTaskCreatePinnedToCore(
+    mainLoop,
+    "mainTask",
+    8192,
+    NULL,
+    1,
+    &controlTask,
+    1
+  );
 }
 
 void indicateError() {
@@ -1715,72 +1742,97 @@ const char logsPage[] PROGMEM = R"html(
 )html";
 
 void handleLogsPage() {
-  // Send the logs HTML from PROGMEM
   server.send_P(200, "text/html", logsPage);
 }
 
 void loop() {
-  server.handleClient();
-  webSocket.loop();
-  resetWatchdog();
+  vTaskDelete(NULL);
+}
 
-  checkoverride1();
-  checkoverride2();
-  overrideLEDState();
-
-  if (!validTimeSync) {
-    if (timeClient.update()) {
-      epochTime = timeClient.getEpochTime();
-      setTime(epochTime);
-      lastNTPSync = millis();
-      validTimeSync = true;
-      validDateSync = true;
-      storeLogEntry("Time sync successful (retry)");
-      clearError();
-    } else {
-      storeLogEntry("Time sync failed (retry).");
-      indicateError();
-    }
-  }
-
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastTimeUpdate >= 1000) {
-    epochTime++;
-    lastTimeUpdate = currentMillis;
-
-    if (validTimeSync) {
-      checkSchedules();
-
-      unsigned long currentSeconds = hour() * 3600 + minute() * 60 + second();
-      if (currentSeconds - last90MinCheck >= CHECK_90MIN_INTERVAL || (last90MinCheck > currentSeconds && currentSeconds >= 0)) {
-
-        String timeStr = String(hour()) + ":" + (minute() < 10 ? "0" : "") + String(minute());
-
-        storeLogEntry("Device is powered onn at " + timeStr);
-        last90MinCheck = currentSeconds;
-      }
-
-      int newDay = day();
-      if (newDay != currentDay) {
-        storeLogEntry("Day changed to: " + String(newDay));
-        currentDay = newDay;
-        last90MinCheck = 0;
-        sendEmailWithLogs("Day Change");
-      }
-    }
-  }
-
-  if (!hasLaunchedSchedules && validTimeSync) {
-    checkScheduleslaunch();
-    storeLogEntry("Startup Schedule Check Success");
-    hasLaunchedSchedules = true;
+void emailLoop(void* parameter) {
+  for (;;) {
     if (WiFi.status() == WL_CONNECTED) {
-      delay(100);
-      sendEmailWithLogs("System Startup");
-    }
-  }
 
-  yield();
+      if (!startupemail) {
+        delay(1000);
+        sendEmailWithLogs("Device is powered on");
+        startupemail = true;
+      }
+
+      if (!pointemail) {
+        sendEmailWithLogs("Status Check");
+        pointemail = true;
+      }
+    }
+    delay(2000);
+  }
+}
+
+void mainLoop(void* parameter) {
+  for (;;) {
+    server.handleClient();
+    webSocket.loop();
+    resetWatchdog();
+
+    checkoverride1();
+    checkoverride2();
+    overrideLEDState();
+
+    if (!validTimeSync) {
+      if (timeClient.update()) {
+        epochTime = timeClient.getEpochTime();
+        setTime(epochTime);
+        lastNTPSync = millis();
+        validTimeSync = true;
+        validDateSync = true;
+        storeLogEntry("Time sync successful (retry)");
+        clearError();
+      } else {
+        storeLogEntry("Time sync failed (retry).");
+        indicateError();
+      }
+    }
+
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastTimeUpdate >= 1000) {
+      epochTime++;
+      lastTimeUpdate = currentMillis;
+
+      if (validTimeSync) {
+        checkSchedules();
+
+        unsigned long currentSeconds = hour() * 3600 + minute() * 60 + second();
+        if (currentSeconds - last90MinCheck >= CHECK_90MIN_INTERVAL || (last90MinCheck > currentSeconds && currentSeconds >= 0)) {
+
+          String timeStr = String(hour()) + ":" + (minute() < 10 ? "0" : "") + String(minute());
+
+          storeLogEntry("Device is powered onn at " + timeStr);
+          last90MinCheck = currentSeconds;
+          pointemail = false;
+        }
+
+        int newDay = day();
+        if (newDay != currentDay) {
+          storeLogEntry("Day changed to: " + String(newDay));
+          currentDay = newDay;
+          last90MinCheck = 0;
+        }
+      }
+    }
+
+    if (!hasLaunchedSchedules && validTimeSync) {
+      checkScheduleslaunch();
+      storeLogEntry("Startup Schedule Check Success");
+      hasLaunchedSchedules = true;
+      startupemail = false;
+
+      if (WiFi.status() == WL_CONNECTED) {
+        delay(100);
+      }
+    }
+
+    delay(1);
+  }
 }
 
 void checkSchedules() {
@@ -2065,7 +2117,6 @@ void handleUpdateSchedule() {
 
 void handleRoot() {
   if (!checkAuthentication()) return;
-  // Send the HTML from PROGMEM
   server.send_P(200, "text/html", mainPage);
 }
 
@@ -2264,7 +2315,7 @@ void sendEmailWithLogs(const String& trigger) {
   }
 
   MailClient.networkReconnect(true);
-  smtp.debug(1);  // Enable debug output
+  smtp.debug(0);
   smtp.setTCPTimeout(10000);
 
   Session_Config config;
