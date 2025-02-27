@@ -62,8 +62,8 @@ unsigned long last90MinCheck = 0;
 const unsigned long CHECK_90MIN_INTERVAL = 5400;
 bool hasError = false;
 bool hasLaunchedSchedules = false;
-bool startupemail = true;
-bool pointemail = true;
+bool startupemail = false;
+bool pointemail = false;
 unsigned long logIdCounter = 0;
 std::vector<Schedule> schedules;
 void handleAddSchedule();
@@ -103,7 +103,7 @@ bool blinkState = false;
 const char* authUsername = "admin";
 const char* authPassword = "12345678";
 
-const unsigned char favicon_png[] PROGMEM= {
+const unsigned char favicon_png[] PROGMEM = {
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x40,
   0x08, 0x06, 0x00, 0x00, 0x00, 0xaa, 0x69, 0x71, 0xde, 0x00, 0x00, 0x00,
@@ -863,8 +863,7 @@ void setup() {
     NULL,
     1,
     &networkTask,
-    0
-  );
+    0);
 
   xTaskCreatePinnedToCore(
     mainLoop,
@@ -873,8 +872,7 @@ void setup() {
     NULL,
     1,
     &controlTask,
-    1
-  );
+    1);
 }
 
 void indicateError() {
@@ -1752,19 +1750,19 @@ void loop() {
 void emailLoop(void* parameter) {
   for (;;) {
     if (WiFi.status() == WL_CONNECTED) {
-
       if (!startupemail) {
-        delay(1000);
+        delay(1500);
         sendEmailWithLogs("Device is powered on");
         startupemail = true;
+        last90MinCheck = (hour() * 3600 + minute() * 60 + second());
       }
 
-      if (!pointemail) {
+      if (pointemail) {
         sendEmailWithLogs("Status Check");
-        pointemail = true;
+        pointemail = false;
       }
     }
-    delay(2000);
+    delay(2600);
   }
 }
 
@@ -1803,12 +1801,13 @@ void mainLoop(void* parameter) {
 
         unsigned long currentSeconds = hour() * 3600 + minute() * 60 + second();
         if (currentSeconds - last90MinCheck >= CHECK_90MIN_INTERVAL || (last90MinCheck > currentSeconds && currentSeconds >= 0)) {
-
           String timeStr = String(hour()) + ":" + (minute() < 10 ? "0" : "") + String(minute());
-
-          storeLogEntry("Device is powered onn at " + timeStr);
+          storeLogEntry("Device is powered on at " + timeStr);
           last90MinCheck = currentSeconds;
-          pointemail = false;
+
+          if (startupemail && !pointemail) {
+            pointemail = true;
+          }
         }
 
         int newDay = day();
